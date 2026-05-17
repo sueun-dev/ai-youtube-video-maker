@@ -47,7 +47,10 @@ function loadDotEnv() {
     if (!trimmed || trimmed.startsWith("#") || !trimmed.includes("=")) continue;
     const [rawKey, ...rawValue] = trimmed.split("=");
     const key = rawKey.trim();
-    const value = rawValue.join("=").trim().replace(/^["']|["']$/g, "");
+    const value = rawValue
+      .join("=")
+      .trim()
+      .replace(/^["']|["']$/g, "");
     if (key && process.env[key] === undefined) process.env[key] = value;
   }
 }
@@ -225,7 +228,9 @@ function runProcess(command, args, options = {}) {
 
 async function createOAuthRealtimeSpeech({ input, voice, instructions }) {
   const cacheKey = createHash("sha256")
-    .update(JSON.stringify({ input, voice, instructions, model: realtimeModel, reasoningEffort: realtimeReasoningEffort }))
+    .update(
+      JSON.stringify({ input, voice, instructions, model: realtimeModel, reasoningEffort: realtimeReasoningEffort }),
+    )
     .digest("hex");
   const cacheDir = join(root, ".cache/tts");
   const requestPath = join(cacheDir, `${cacheKey}.json`);
@@ -235,13 +240,16 @@ async function createOAuthRealtimeSpeech({ input, voice, instructions }) {
   await mkdir(cacheDir, { recursive: true });
   if (existsSync(wavPath)) return readFile(wavPath);
 
-  await writeFile(requestPath, JSON.stringify({
-    input,
-    voice,
-    instructions,
-    model: realtimeModel,
-    reasoningEffort: realtimeReasoningEffort,
-  }));
+  await writeFile(
+    requestPath,
+    JSON.stringify({
+      input,
+      voice,
+      instructions,
+      model: realtimeModel,
+      reasoningEffort: realtimeReasoningEffort,
+    }),
+  );
   await runProcess(oauthPython, [oauthHelper, requestPath, pcmPath], {
     cwd: oauthRoot,
     env: { ...process.env, PYTHONPATH: `${oauthRoot}/src` },
@@ -268,7 +276,9 @@ function extractJson(text) {
 }
 
 function clipText(value, fallback, max = 320) {
-  const text = String(value || "").replace(/\s+/g, " ").trim();
+  const text = String(value || "")
+    .replace(/\s+/g, " ")
+    .trim();
   return (text || fallback).slice(0, max);
 }
 
@@ -296,7 +306,9 @@ function decodeHtml(value) {
 }
 
 function stripHtml(value) {
-  return decodeHtml(String(value || "").replace(/<[^>]+>/g, " ")).replace(/\s+/g, " ").trim();
+  return decodeHtml(String(value || "").replace(/<[^>]+>/g, " "))
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function hostOf(url) {
@@ -349,7 +361,13 @@ async function verifySource(source) {
     } catch (error) {
       clearTimeout(timer);
       if (method === "GET") {
-        return { ...source, verified: false, status: 0, checkedAt, warning: String(error.message || error).slice(0, 120) };
+        return {
+          ...source,
+          verified: false,
+          status: 0,
+          checkedAt,
+          warning: String(error.message || error).slice(0, 120),
+        };
       }
     }
   }
@@ -411,15 +429,18 @@ async function researchTopic(topic, style) {
 
   try {
     const topicTokens = topic.split(/\s+/).filter(Boolean);
-    const latinQuery = topicTokens.filter((token) => /[a-z0-9]/i.test(token)).slice(0, 4).join(" ");
+    const latinQuery = topicTokens
+      .filter((token) => /[a-z0-9]/i.test(token))
+      .slice(0, 4)
+      .join(" ");
     const shortQuery = topicTokens.slice(0, 3).join(" ");
-    const queries = [...new Set([
-      topic,
-      shortQuery,
-      latinQuery,
-      latinQuery ? `${latinQuery} official` : "",
-      `${shortQuery} 공식 발표`,
-    ].filter((item) => item && item.length >= 3))];
+    const queries = [
+      ...new Set(
+        [topic, shortQuery, latinQuery, latinQuery ? `${latinQuery} official` : "", `${shortQuery} 공식 발표`].filter(
+          (item) => item && item.length >= 3,
+        ),
+      ),
+    ];
     const byUrl = new Map();
     for (const nextQuery of queries) {
       const html = await fetchTextWithTimeout(`https://duckduckgo.com/html/?q=${encodeURIComponent(nextQuery)}`, {
@@ -434,11 +455,16 @@ async function researchTopic(topic, style) {
       if (byUrl.size >= 5) break;
     }
     const candidates = [...byUrl.values()]
-      .sort((a, b) => Number(/openai\.com|platform\.openai\.com|model-spec\.openai\.com/.test(b.host)) - Number(/openai\.com|platform\.openai\.com|model-spec\.openai\.com/.test(a.host)))
+      .sort(
+        (a, b) =>
+          Number(/openai\.com|platform\.openai\.com|model-spec\.openai\.com/.test(b.host)) -
+          Number(/openai\.com|platform\.openai\.com|model-spec\.openai\.com/.test(a.host)),
+      )
       .slice(0, 5);
     research.sources = await verifySources(candidates);
     if (!research.sources.length) research.warnings.push("No search results parsed.");
-    if (research.sources.some((source) => !source.verified)) research.warnings.push("Some source URLs could not be verified as reachable.");
+    if (research.sources.some((source) => !source.verified))
+      research.warnings.push("Some source URLs could not be verified as reachable.");
   } catch (error) {
     research.warnings.push(`Search failed: ${String(error.message || error).slice(0, 160)}`);
   }
@@ -558,7 +584,7 @@ const deliveryAlternates = {
   conclusion: ["synthesis", "transition", "evidence"],
 };
 
-function deliveryRoleFor(layout, index, sceneCount) {
+function deliveryRoleFor(layout, index) {
   if (index === 0 || layout === "hero") return "hook";
   if (layout === "sources") return "sources";
   if (layout === "final") return "conclusion";
@@ -593,12 +619,29 @@ function normalizeDelivery(value, layout, index, sceneCount, style = "explainer"
 }
 
 function normalizeScene(raw, index, sceneCount, topic, options = {}) {
-  const layouts = ["hero", "compare", "spec", "cards", "flow", "clock", "metrics", "code", "pipeline", "qa", "spectrum", "clean", "render", "final", "sources"];
+  const layouts = [
+    "hero",
+    "compare",
+    "spec",
+    "cards",
+    "flow",
+    "clock",
+    "metrics",
+    "code",
+    "pipeline",
+    "qa",
+    "spectrum",
+    "clean",
+    "render",
+    "final",
+    "sources",
+  ];
   const layoutCycle = ["hero", "compare", "spec", "cards", "flow", "metrics", "code", "qa", "pipeline", "clean"];
   let layout = layouts.includes(raw?.layout) ? raw.layout : layoutCycle[index % layoutCycle.length];
   if (index === 0) layout = "hero";
   if (index === options.sourceIndex) layout = "sources";
-  else if (index === options.finalIndex || (index === sceneCount - 1 && options.sourceIndex !== index)) layout = "final";
+  else if (index === options.finalIndex || (index === sceneCount - 1 && options.sourceIndex !== index))
+    layout = "final";
 
   const title = clipText(raw?.title, index === 0 ? `${topic} 한 번에 보기` : `${topic} 핵심 ${index + 1}`, 72);
   const markCandidate = clipText(raw?.mark, title.split(/\s+/)[0] || topic.slice(0, 8), 24);
@@ -650,21 +693,31 @@ function normalizeScene(raw, index, sceneCount, topic, options = {}) {
   if (layout === "code") {
     scene.code = normalizeStringList(raw?.code, ["topic", "outline", "scene json", "voice wav", "video export"], 5, 64);
   }
-  if (layout === "pipeline") scene.steps = normalizeStringList(raw?.steps, ["topic", "script", "html", "voice", "export"]);
+  if (layout === "pipeline")
+    scene.steps = normalizeStringList(raw?.steps, ["topic", "script", "html", "voice", "export"]);
   if (layout === "qa") {
-    scene.rows = arrayOfPairs(raw?.rows, [
-      ["claim", "check"],
-      ["screen", "match"],
-      ["audio", "sync"],
-    ], 3);
+    scene.rows = arrayOfPairs(
+      raw?.rows,
+      [
+        ["claim", "check"],
+        ["screen", "match"],
+        ["audio", "sync"],
+      ],
+      3,
+    );
   }
-  if (layout === "spectrum") scene.decision = clipText(raw?.decision, "한 버전 안에서는 같은 목소리를 끝까지 유지한다.", 96);
+  if (layout === "spectrum")
+    scene.decision = clipText(raw?.decision, "한 버전 안에서는 같은 목소리를 끝까지 유지한다.", 96);
   if (layout === "clean") {
-    scene.frames = arrayOfPairs(raw?.frames, [
-      ["hook", "한 문장으로 시작"],
-      ["body", "근거와 구조"],
-      ["close", "명확한 결론"],
-    ], 3);
+    scene.frames = arrayOfPairs(
+      raw?.frames,
+      [
+        ["hook", "한 문장으로 시작"],
+        ["body", "근거와 구조"],
+        ["close", "명확한 결론"],
+      ],
+      3,
+    );
   }
   if (layout === "final") {
     scene.route = normalizeStringList(raw?.route, ["topic", "voice", "preview", "1080p", "done"]);
@@ -715,9 +768,12 @@ function makeSourcesScene(topic, sources) {
 }
 
 function layoutCycleFor(style) {
-  if (style === "documentary") return ["hero", "metrics", "flow", "compare", "spec", "qa", "pipeline", "cards", "code", "clean", "render"];
-  if (style === "story") return ["hero", "cards", "flow", "compare", "clock", "clean", "spec", "metrics", "pipeline", "render"];
-  if (style === "emotional") return ["hero", "compare", "cards", "clock", "clean", "flow", "metrics", "spec", "qa", "render"];
+  if (style === "documentary")
+    return ["hero", "metrics", "flow", "compare", "spec", "qa", "pipeline", "cards", "code", "clean", "render"];
+  if (style === "story")
+    return ["hero", "cards", "flow", "compare", "clock", "clean", "spec", "metrics", "pipeline", "render"];
+  if (style === "emotional")
+    return ["hero", "compare", "cards", "clock", "clean", "flow", "metrics", "spec", "qa", "render"];
   return ["hero", "compare", "spec", "cards", "flow", "metrics", "code", "qa", "pipeline", "clean", "clock", "render"];
 }
 
@@ -741,7 +797,9 @@ function repairLayoutVariety(scenes, topic, sceneCount, style, options) {
     const tooCommon = (usage.get(scene.layout) || 0) >= 4;
 
     if (tooSoon || tooCommon) {
-      const replacement = cycle.find((layout) => layout !== previous && layout !== twoBack && layout !== next && (usage.get(layout) || 0) < 4);
+      const replacement = cycle.find(
+        (layout) => layout !== previous && layout !== twoBack && layout !== next && (usage.get(layout) || 0) < 4,
+      );
       if (replacement) {
         repaired[index] = normalizeScene({ ...scene, layout: replacement }, index, sceneCount, topic, options);
       }
@@ -756,7 +814,11 @@ function canShiftDeliveryRole(role, index) {
 }
 
 function alternateDeliveryRole(role, previousRole) {
-  return (deliveryAlternates[role] || ["context", "evidence", "transition"]).find((candidate) => candidate !== previousRole) || role;
+  return (
+    (deliveryAlternates[role] || ["context", "evidence", "transition"]).find(
+      (candidate) => candidate !== previousRole,
+    ) || role
+  );
 }
 
 function repairDeliveryVariety(scenes, style) {
@@ -764,7 +826,13 @@ function repairDeliveryVariety(scenes, style) {
   return scenes.map((scene, index) => {
     let delivery = normalizeDelivery(scene.delivery, scene.layout, index, scenes.length, style);
     if (delivery.role === previousRole && canShiftDeliveryRole(delivery.role, index)) {
-      delivery = normalizeDelivery({ role: alternateDeliveryRole(delivery.role, previousRole) }, scene.layout, index, scenes.length, style);
+      delivery = normalizeDelivery(
+        { role: alternateDeliveryRole(delivery.role, previousRole) },
+        scene.layout,
+        index,
+        scenes.length,
+        style,
+      );
     }
     previousRole = delivery.role;
     return { ...scene, delivery };
@@ -799,7 +867,8 @@ function scoreManifest(manifest, research) {
     const scene = scenes[index] || {};
     layoutCounts.set(scene.layout, (layoutCounts.get(scene.layout) || 0) + 1);
     if (index > 0 && scene.layout === scenes[index - 1]?.layout) adjacentRepeats += 1;
-    if (index > 0 && scene.delivery?.role && scene.delivery.role === scenes[index - 1]?.delivery?.role) adjacentDeliveryRepeats += 1;
+    if (index > 0 && scene.delivery?.role && scene.delivery.role === scenes[index - 1]?.delivery?.role)
+      adjacentDeliveryRepeats += 1;
     if (/^(\d{1,2}:)?\d{1,2}:\d{2}/.test(scene.caption || "")) {
       score -= 4;
       issues.push(`Scene ${index + 1} caption still has a timestamp.`);
@@ -823,14 +892,22 @@ function scoreManifest(manifest, research) {
     issues.push(`Adjacent delivery-role repeats: ${adjacentDeliveryRepeats}.`);
   }
 
-  const titles = scenes.map((scene) => String(scene.title || "").replace(/\s+/g, "").toLowerCase()).filter(Boolean);
+  const titles = scenes
+    .map((scene) =>
+      String(scene.title || "")
+        .replace(/\s+/g, "")
+        .toLowerCase(),
+    )
+    .filter(Boolean);
   const uniqueTitleRatio = titles.length ? new Set(titles).size / titles.length : 0;
   if (uniqueTitleRatio < 0.9) {
     score -= 14;
     issues.push("Scene titles are too repetitive.");
   }
 
-  const overusedLayouts = [...layoutCounts.entries()].filter(([layout, count]) => !["hero", "final", "sources"].includes(layout) && count > 5);
+  const overusedLayouts = [...layoutCounts.entries()].filter(
+    ([layout, count]) => !["hero", "final", "sources"].includes(layout) && count > 5,
+  );
   if (overusedLayouts.length) {
     score -= 8;
     issues.push(`Overused layout: ${overusedLayouts.map(([layout]) => layout).join(", ")}.`);
@@ -850,8 +927,16 @@ function scoreManifest(manifest, research) {
   };
 }
 
-function normalizeManifest(payload, topic, sceneCount = 30, style = "explainer", research = { required: false, sources: [] }) {
-  const sourceList = normalizeSources(research.required ? research.sources : (research.sources?.length ? research.sources : payload?.sources));
+function normalizeManifest(
+  payload,
+  topic,
+  sceneCount = 30,
+  style = "explainer",
+  research = { required: false, sources: [] },
+) {
+  const sourceList = normalizeSources(
+    research.required ? research.sources : research.sources?.length ? research.sources : payload?.sources,
+  );
   const sourceIndex = sourceList.length ? sceneCount - 1 : undefined;
   const finalIndex = sourceList.length ? sceneCount - 2 : sceneCount - 1;
   const options = { sourceIndex, finalIndex, style };
@@ -912,23 +997,37 @@ function fallbackManifest(topic, sceneCount = 30, style = "explainer", research 
     ["clean", "화면은 짧고 정확해야 한다", "짧고"],
   ];
   const scenes = Array.from({ length: sceneCount }, (_, index) => {
-    const [layout, title, mark] = index === sceneCount - 1 ? ["final", `${topic}의 결론`, "결론"] : plan[index % plan.length];
-    return normalizeScene({
-      layout,
-      title,
-      mark,
-      caption: `${title}.`,
-      speech:
-        `${topic}를 다룰 때 이 장면은 ${title}에 집중합니다. 화면은 한 문장만 강하게 보여주고, 음성은 맥락과 이유를 이어서 설명해 다음 장면으로 자연스럽게 넘어가게 합니다.`,
-    }, index, sceneCount, topic);
+    const [layout, title, mark] =
+      index === sceneCount - 1 ? ["final", `${topic}의 결론`, "결론"] : plan[index % plan.length];
+    return normalizeScene(
+      {
+        layout,
+        title,
+        mark,
+        caption: `${title}.`,
+        speech: `${topic}를 다룰 때 이 장면은 ${title}에 집중합니다. 화면은 한 문장만 강하게 보여주고, 음성은 맥락과 이유를 이어서 설명해 다음 장면으로 자연스럽게 넘어가게 합니다.`,
+      },
+      index,
+      sceneCount,
+      topic,
+    );
   });
-  return normalizeManifest({ title: `${topic} 설명 영상`, subtitle: "로컬 템플릿으로 만든 5분 HTML TTS 영상", scenes }, topic, sceneCount, style, research);
+  return normalizeManifest(
+    { title: `${topic} 설명 영상`, subtitle: "로컬 템플릿으로 만든 5분 HTML TTS 영상", scenes },
+    topic,
+    sceneCount,
+    style,
+    research,
+  );
 }
 
 function styleGuidanceFor(style) {
-  if (style === "documentary") return "Evidence-first documentary. Use verified claims, measured narration, clear uncertainty, and a final source page.";
-  if (style === "story") return "Story arc. Define a character or decision-maker, tension, failed attempts, turning point, lesson, and payoff.";
-  if (style === "emotional") return "Emotional but restrained. Start from human stakes, use contrast, then land each beat in a concrete insight.";
+  if (style === "documentary")
+    return "Evidence-first documentary. Use verified claims, measured narration, clear uncertainty, and a final source page.";
+  if (style === "story")
+    return "Story arc. Define a character or decision-maker, tension, failed attempts, turning point, lesson, and payoff.";
+  if (style === "emotional")
+    return "Emotional but restrained. Start from human stakes, use contrast, then land each beat in a concrete insight.";
   return "Direct explainer. Hook fast, explain mechanism, show examples, name risks, then synthesize clearly.";
 }
 
@@ -974,9 +1073,12 @@ function buildVoicePrompt(style) {
     "Avoid customer-service warmth, overacting, shouting, or promotional excitement.",
     "Read the provided narration exactly; do not add new words.",
   ].join(" ");
-  if (style === "documentary") return `${base} Default to neutral evidence, quiet tension in hooks, and resolved certainty in conclusions.`;
-  if (style === "story") return `${base} Carry controlled story tension while keeping the delivery documentary, not theatrical.`;
-  if (style === "emotional") return `${base} Add human weight and warmth where useful, but keep the voice grounded and unsentimental.`;
+  if (style === "documentary")
+    return `${base} Default to neutral evidence, quiet tension in hooks, and resolved certainty in conclusions.`;
+  if (style === "story")
+    return `${base} Carry controlled story tension while keeping the delivery documentary, not theatrical.`;
+  if (style === "emotional")
+    return `${base} Add human weight and warmth where useful, but keep the voice grounded and unsentimental.`;
   return `${base} Make mechanism scenes clear, transitions forward-moving, and conclusions settled.`;
 }
 
@@ -1002,7 +1104,9 @@ async function createBrief(req, res) {
     return;
   }
 
-  const topic = String(body.topic || "").replace(/\s+/g, " ").trim();
+  const topic = String(body.topic || "")
+    .replace(/\s+/g, " ")
+    .trim();
   const style = normalizeStyle(body.style);
   const notes = clipText(body.notes, "", 1200);
   const sceneCount = Math.max(20, Math.min(36, Number(body.sceneCount) || 30));
@@ -1024,7 +1128,14 @@ async function createBrief(req, res) {
     research: { ...research, sources },
     sources,
     prompts: {
-      generation: buildGenerationPrompt({ topic, style, notes, sceneCount, targetSeconds, research: { ...research, sources } }),
+      generation: buildGenerationPrompt({
+        topic,
+        style,
+        notes,
+        sceneCount,
+        targetSeconds,
+        research: { ...research, sources },
+      }),
       voice: buildVoicePrompt(style),
     },
     discussionQuestions: buildDiscussionQuestions(style, research),
@@ -1042,7 +1153,9 @@ async function createManifest(req, res) {
     return;
   }
 
-  const topic = String(body.topic || "").replace(/\s+/g, " ").trim();
+  const topic = String(body.topic || "")
+    .replace(/\s+/g, " ")
+    .trim();
   const sceneCount = Math.max(20, Math.min(36, Number(body.sceneCount) || 30));
   if (topic.length < 2) {
     json(res, 400, { error: "Missing topic." });
@@ -1057,13 +1170,20 @@ async function createManifest(req, res) {
   const notes = clipText(body.notes, "", 1200);
   const research = await researchTopic(topic, style);
   const notesHash = createHash("sha256").update(notes).digest("hex").slice(0, 12);
-  const researchHash = createHash("sha256").update(JSON.stringify({
-    required: research.required,
-    urls: research.sources.map((source) => source.url),
-  })).digest("hex").slice(0, 16);
+  const researchHash = createHash("sha256")
+    .update(
+      JSON.stringify({
+        required: research.required,
+        urls: research.sources.map((source) => source.url),
+      }),
+    )
+    .digest("hex")
+    .slice(0, 16);
 
   if (hasOAuthRealtime() && existsSync(oauthManifestHelper)) {
-    const cacheKey = createHash("sha256").update(JSON.stringify({ topic, sceneCount, style, notesHash, researchHash, helper: "oauth-manifest-v10-xhigh" })).digest("hex");
+    const cacheKey = createHash("sha256")
+      .update(JSON.stringify({ topic, sceneCount, style, notesHash, researchHash, helper: "oauth-manifest-v10-xhigh" }))
+      .digest("hex");
     const cacheDir = join(root, ".cache/manifests");
     const requestPath = join(cacheDir, `${cacheKey}.request.json`);
     const manifestPath = join(cacheDir, `${cacheKey}.manifest.json`);

@@ -24,8 +24,16 @@
   ],
   "scripts": {
     "start": "node server.js",
-    "test": "node --check app.js && node --check server.js && python3 -m py_compile scripts/oauth_manifest.py scripts/oauth_realtime_tts.py",
+    "lint": "eslint app.js server.js scripts/*.mjs",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "npm run lint && node --check app.js && node --check server.js && python3 -m py_compile scripts/oauth_manifest.py scripts/oauth_realtime_tts.py",
     "measure": "node scripts/measure_video_audio.mjs",
     "voices": "node scripts/generate_voice_samples.mjs"
+  },
+  "devDependencies": {
+    "eslint": "^10.4.0",
+    "globals": "^17.6.0",
+    "prettier": "^3.8.3"
   }
 }

@@ -97,10 +97,10 @@ const scenes = [
     caption: "프롬프트는 제작 JSON을 출력해야 한다.",
     code: [
       "{",
-      "\"page\": 8,",
-      "\"layout\": \"code\",",
-      "\"speech\": \"one exact narration beat\",",
-      "\"duration_floor_seconds\": 10",
+      '"page": 8,',
+      '"layout": "code",',
+      '"speech": "one exact narration beat",',
+      '"duration_floor_seconds": 10',
       "}",
     ],
     speech:
@@ -455,7 +455,7 @@ const scenes = [
   },
 ];
 
-const topicScenes = [
+const _topicScenes = [
   {
     duration: 10,
     layout: "hero",
@@ -530,13 +530,7 @@ const topicScenes = [
     title: "Codex에서는 토큰 효율도 중요했다",
     mark: "토큰 효율",
     caption: "Codex에서는 토큰 효율도 중요했다.",
-    code: [
-      "same engineering task",
-      "fewer tokens",
-      "more checks",
-      "less hand-holding",
-      "higher completion quality",
-    ],
+    code: ["same engineering task", "fewer tokens", "more checks", "less hand-holding", "higher completion quality"],
     speech:
       "Codex에서 중요한 변화는 단지 점수가 아닙니다. 공식 글은 GPT-5.5가 같은 Codex 작업을 더 적은 토큰으로 끝내는 경향도 강조합니다.",
   },
@@ -980,7 +974,10 @@ function renderSceneBody(scene) {
       ${title}
       <div class="metric-grid">
         ${(scene.metrics || [])
-          .map(([label, value], index) => `<div class="${index === 1 ? "selected" : ""}"><span>${escapeHtml(label)}</span><b>${escapeHtml(value)}</b></div>`)
+          .map(
+            ([label, value], index) =>
+              `<div class="${index === 1 ? "selected" : ""}"><span>${escapeHtml(label)}</span><b>${escapeHtml(value)}</b></div>`,
+          )
           .join("")}
       </div>
     `;
@@ -1274,7 +1271,11 @@ function deliveryRoleCanShift(role, index) {
 }
 
 function alternateDeliveryRole(role, previousRole) {
-  return (DELIVERY_ALTERNATES[role] || ["context", "evidence", "transition"]).find((candidate) => candidate !== previousRole) || role;
+  return (
+    (DELIVERY_ALTERNATES[role] || ["context", "evidence", "transition"]).find(
+      (candidate) => candidate !== previousRole,
+    ) || role
+  );
 }
 
 function deliveryRoleAt(index) {
@@ -1537,7 +1538,11 @@ function updateView(options = {}) {
 function selectedVoice() {
   if (useOpenAiTts) return selectedOpenAiVoice || voiceSelect.value || BEST_OPENAI_VOICE;
   const selectedName = voiceSelect.value;
-  return voices.find((voice) => voice.name === selectedName) || voices.find((voice) => voice.lang.startsWith("ko")) || voices[0];
+  return (
+    voices.find((voice) => voice.name === selectedName) ||
+    voices.find((voice) => voice.lang.startsWith("ko")) ||
+    voices[0]
+  );
 }
 
 async function ensureAudioContext() {
@@ -1874,7 +1879,9 @@ function canvasFont(size, weight = 800) {
 }
 
 function wrapCanvasText(ctx, text, maxWidth) {
-  const words = String(text || "").split(/\s+/).filter(Boolean);
+  const words = String(text || "")
+    .split(/\s+/)
+    .filter(Boolean);
   const lines = [];
   let line = "";
   for (const word of words) {
@@ -1971,11 +1978,22 @@ function drawSceneCanvas(ctx, scene, index, sceneProgress, totalProgress) {
     ctx.beginPath();
     ctx.ellipse(960, 560, 360, 132, -sceneProgress * 0.3, 0, Math.PI * 2);
     ctx.stroke();
-    drawTextBlock(ctx, scene.subtitle || currentManifest.subtitle, 960, 680, 1040, 36, { color: "rgba(244,241,234,0.74)", weight: 760 });
+    drawTextBlock(ctx, scene.subtitle || currentManifest.subtitle, 960, 680, 1040, 36, {
+      color: "rgba(244,241,234,0.74)",
+      weight: 760,
+    });
   } else if (scene.layout === "compare") {
     (scene.panels || []).slice(0, 2).forEach((panel, i) => {
       const x = i === 0 ? 330 : 1010;
-      fillCard(ctx, x, 470, 580, 310, i === 1 ? "rgba(232,139,97,0.62)" : "rgba(255,255,255,0.14)", i === 1 ? "rgba(232,139,97,0.12)" : "rgba(255,255,255,0.045)");
+      fillCard(
+        ctx,
+        x,
+        470,
+        580,
+        310,
+        i === 1 ? "rgba(232,139,97,0.62)" : "rgba(255,255,255,0.14)",
+        i === 1 ? "rgba(232,139,97,0.12)" : "rgba(255,255,255,0.045)",
+      );
       drawTextBlock(ctx, panel.title, x + 290, 505, 450, 38, { color: i === 1 ? gold : "#f4f1ea", weight: 900 });
       (panel.lines || []).slice(0, 3).forEach((line, j) => {
         drawTextBlock(ctx, line, x + 290, 585 + j * 54, 440, 30, { color: "rgba(244,241,234,0.76)", weight: 760 });
@@ -1985,7 +2003,15 @@ function drawSceneCanvas(ctx, scene, index, sceneProgress, totalProgress) {
     const items = scene.layout === "spec" ? scene.specs : scene.metrics;
     (items || []).slice(0, 4).forEach(([label, value], i) => {
       const x = 210 + i * 380;
-      fillCard(ctx, x, 515, 320, 230, i === 1 ? "rgba(138,216,158,0.58)" : "rgba(255,255,255,0.14)", i === 1 ? "rgba(138,216,158,0.08)" : "rgba(255,255,255,0.045)");
+      fillCard(
+        ctx,
+        x,
+        515,
+        320,
+        230,
+        i === 1 ? "rgba(138,216,158,0.58)" : "rgba(255,255,255,0.14)",
+        i === 1 ? "rgba(138,216,158,0.08)" : "rgba(255,255,255,0.045)",
+      );
       drawTextBlock(ctx, label, x + 160, 550, 250, 24, { color: "rgba(244,241,234,0.58)", weight: 850 });
       drawTextBlock(ctx, value, x + 160, 620, 270, 48, { color: i === 1 ? green : "#f4f1ea", weight: 920 });
     });
@@ -2010,7 +2036,9 @@ function drawSceneCanvas(ctx, scene, index, sceneProgress, totalProgress) {
       ctx.textAlign = "left";
       ctx.font = canvasFont(27, 840);
       ctx.fillStyle = "#f4f1ea";
-      wrapCanvasText(ctx, source.title, 850).slice(0, 1).forEach((line) => ctx.fillText(line, 410, y + 17));
+      wrapCanvasText(ctx, source.title, 850)
+        .slice(0, 1)
+        .forEach((line) => ctx.fillText(line, 410, y + 17));
       ctx.textAlign = "right";
       ctx.font = canvasFont(24, 780);
       ctx.fillStyle = "rgba(244,241,234,0.58)";
@@ -2021,8 +2049,19 @@ function drawSceneCanvas(ctx, scene, index, sceneProgress, totalProgress) {
     (items || []).slice(0, 5).forEach((item, i) => {
       const x = 185 + i * 330;
       const active = i === (scene.activeNode ?? 2) || scene.layout === "final";
-      fillCard(ctx, x, 560, 250, 120, active ? "rgba(232,139,97,0.62)" : "rgba(255,255,255,0.14)", active ? "rgba(232,139,97,0.12)" : "rgba(255,255,255,0.045)");
-      drawTextBlock(ctx, item, x + 125, 595, 190, 29, { color: active ? "#f4f1ea" : "rgba(244,241,234,0.7)", weight: 880 });
+      fillCard(
+        ctx,
+        x,
+        560,
+        250,
+        120,
+        active ? "rgba(232,139,97,0.62)" : "rgba(255,255,255,0.14)",
+        active ? "rgba(232,139,97,0.12)" : "rgba(255,255,255,0.045)",
+      );
+      drawTextBlock(ctx, item, x + 125, 595, 190, 29, {
+        color: active ? "#f4f1ea" : "rgba(244,241,234,0.7)",
+        weight: 880,
+      });
       if (i < 4) {
         ctx.strokeStyle = "rgba(232,139,97,0.6)";
         ctx.lineWidth = 3;
@@ -2104,7 +2143,10 @@ async function recordYouTubeVideo() {
   const mimeType = ["video/webm;codecs=vp9,opus", "video/webm;codecs=vp8,opus", "video/webm"].find((type) =>
     MediaRecorder.isTypeSupported(type),
   );
-  const recorder = new MediaRecorder(mixedStream, mimeType ? { mimeType, videoBitsPerSecond: 8000000 } : { videoBitsPerSecond: 8000000 });
+  const recorder = new MediaRecorder(
+    mixedStream,
+    mimeType ? { mimeType, videoBitsPerSecond: 8000000 } : { videoBitsPerSecond: 8000000 },
+  );
   const chunks = [];
   recorder.ondataavailable = (event) => {
     if (event.data?.size) chunks.push(event.data);
@@ -2131,7 +2173,13 @@ async function recordYouTubeVideo() {
     const started = performance.now();
     while ((performance.now() - started) / 1000 < duration) {
       const sceneElapsed = (performance.now() - started) / 1000;
-      drawSceneCanvas(ctx, scene, index, Math.min(1, sceneElapsed / duration), (elapsedTotal + sceneElapsed) / exportTotal);
+      drawSceneCanvas(
+        ctx,
+        scene,
+        index,
+        Math.min(1, sceneElapsed / duration),
+        (elapsedTotal + sceneElapsed) / exportTotal,
+      );
       downloadStatus.textContent = `Rendering ${formatTime(elapsedTotal + sceneElapsed)} / ${formatTime(exportTotal)}`;
       await new Promise((resolve) => requestAnimationFrame(resolve));
     }
@@ -2338,7 +2386,11 @@ async function generateVideoFromTopic(options = {}) {
   const notes = topicNotes?.value.replace(/\s+/g, " ").trim() || "";
   if (generateBtn) generateBtn.disabled = true;
   if (prepareBtn) prepareBtn.disabled = true;
-  setBuildStatus(options.automatic ? "Loading verified default video..." : "Researching sources, generating scenes, then running quality gate...");
+  setBuildStatus(
+    options.automatic
+      ? "Loading verified default video..."
+      : "Researching sources, generating scenes, then running quality gate...",
+  );
   if (downloadLink) downloadLink.hidden = true;
   try {
     const response = await fetch("/api/generate", {
@@ -2410,12 +2462,12 @@ async function loadVoiceBackend() {
       selectedOpenAiVoice = openAiVoices.includes(requestedVoice)
         ? requestedVoice
         : openAiVoices.includes(status.bestVoice)
-        ? status.bestVoice
-        : openAiVoices.includes(BEST_OPENAI_VOICE)
-          ? BEST_OPENAI_VOICE
-          : openAiVoices.includes(BACKUP_OPENAI_VOICE)
-            ? BACKUP_OPENAI_VOICE
-            : openAiVoices[0];
+          ? status.bestVoice
+          : openAiVoices.includes(BEST_OPENAI_VOICE)
+            ? BEST_OPENAI_VOICE
+            : openAiVoices.includes(BACKUP_OPENAI_VOICE)
+              ? BACKUP_OPENAI_VOICE
+              : openAiVoices[0];
       const effortLabel = status.reasoningEffort ? ` / ${status.reasoningEffort}` : "";
       ttsStatus.textContent = `${status.provider || "OpenAI"} ${status.model}${effortLabel} ready`;
       backendLabel = ttsStatus.textContent;
