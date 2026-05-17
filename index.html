@@ -1,0 +1,334 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>AI YouTube Video Maker | HTML TTS Video Generator</title>
+    <meta
+      name="description"
+      content="Create YouTube-ready videos from a topic using AI scripts, HTML scenes, source-aware prompts, and TTS narration."
+    />
+    <meta
+      name="keywords"
+      content="AI YouTube video maker, AI video generator, YouTube video generator, script to video, topic to video, TTS video, HTML video generator, OpenAI TTS, Realtime TTS"
+    />
+    <meta property="og:title" content="AI YouTube Video Maker" />
+    <meta
+      property="og:description"
+      content="Generate YouTube-ready videos with AI scene planning, HTML animation, source-aware scripts, and TTS narration."
+    />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="app-shell" data-clean="false">
+      <section class="player-panel" aria-label="HTML TTS video maker">
+        <section class="builder-panel" aria-label="Video generator">
+          <div class="builder-heading">
+            <p class="panel-kicker">VIDEO MAKER</p>
+            <h1>주제와 목소리로 5분 HTML 영상을 만든다</h1>
+          </div>
+          <form class="builder-form" id="generatorForm">
+            <label class="topic-control">
+              <span>Topic</span>
+              <textarea id="topicInput" rows="3">OpenAI GPT-5.5 발표 내용과 개발 방식</textarea>
+            </label>
+            <label class="topic-control notes-control">
+              <span>Discussion notes</span>
+              <textarea id="topicNotes" rows="2" placeholder="관점, 타깃 시청자, 꼭 넣을 내용, 피해야 할 주장이나 톤을 적어두면 생성 프롬프트에 반영됩니다."></textarea>
+            </label>
+            <label class="voice-control builder-voice">
+              <span>Voice</span>
+              <select id="builderVoiceSelect" aria-label="Builder voice selection"></select>
+            </label>
+            <label class="voice-control builder-style">
+              <span>Template</span>
+              <select id="styleSelect" aria-label="Video template selection">
+                <option value="explainer">Explainer</option>
+                <option value="documentary" selected>Documentary</option>
+                <option value="story">Story</option>
+                <option value="emotional">Emotional</option>
+              </select>
+            </label>
+            <div class="builder-actions">
+              <button class="primary" id="prepareBtn" type="button">Discuss Topic</button>
+              <button id="generateBtn" type="button" disabled>Generate Video</button>
+            </div>
+          </form>
+          <div class="build-status" id="buildStatus">Discuss topic first.</div>
+        </section>
+
+        <div class="stage-wrap">
+          <div class="stage" id="stage" aria-live="polite">
+            <div class="film-grain"></div>
+            <div class="scanline"></div>
+            <div class="scene scene-hero active" data-scene="0">
+              <div class="title-lockup">
+                <span class="eyebrow">HTML TTS FILM 01</span>
+                <h1>HTML이<br /><mark>영상 소스</mark>가 된다</h1>
+                <p>장면, 음성, 측정값으로 움직이는 브라우저 기반 영상</p>
+              </div>
+              <div class="hero-orbit" aria-hidden="true">
+                <span></span><span></span><span></span><span></span>
+              </div>
+            </div>
+
+            <div class="scene scene-contrast" data-scene="1">
+              <h2>고정 타이머는<br /><mark>긴 영상</mark>에서 깨진다</h2>
+              <div class="split-board">
+                <div class="board-item muted">
+                  <b>Timer First</b>
+                  <span>8초 고정</span>
+                  <span>문장 중간 전환</span>
+                  <span>voice 변경 시 틀어짐</span>
+                </div>
+                <div class="board-item hot">
+                  <b>Audio First</b>
+                  <span>WAV 생성</span>
+                  <span>실제 길이 측정</span>
+                  <span>끝난 뒤 전환</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="scene scene-spec" data-scene="2">
+              <h2>한 장면은<br /><mark>제작 명세</mark>를 가진다</h2>
+              <div class="spec-grid">
+                <article>
+                  <span>scene_role</span>
+                  <b>mechanism</b>
+                </article>
+                <article>
+                  <span>visual_layout</span>
+                  <b>clock panel</b>
+                </article>
+                <article>
+                  <span>narration</span>
+                  <b>long script</b>
+                </article>
+                <article>
+                  <span>qa_gate</span>
+                  <b>300s pass</b>
+                </article>
+              </div>
+            </div>
+
+            <div class="scene scene-lab" data-scene="3">
+              <h2>장면 역할을 나누면<br /><mark>반복</mark>이 줄어든다</h2>
+              <div class="repo-row">
+                <article>
+                  <span class="repo-icon">H</span>
+                  <strong>hook</strong>
+                  <small>문제와 약속을 바로 제시</small>
+                </article>
+                <article>
+                  <span class="repo-icon">M</span>
+                  <strong>mechanism</strong>
+                  <small>작동 순서를 화면으로 분리</small>
+                </article>
+                <article>
+                  <span class="repo-icon">Q</span>
+                  <strong>quality</strong>
+                  <small>실측 기준으로 통과 여부 결정</small>
+                </article>
+              </div>
+            </div>
+
+            <div class="scene scene-signal" data-scene="4">
+              <h2>음성 생성은<br /><mark>첫 산출물</mark>이다</h2>
+              <div class="signal-map">
+                <span class="node start">script</span>
+                <span class="node">voice</span>
+                <span class="node active-node">wav</span>
+                <span class="node">cache</span>
+                <span class="node end">play</span>
+                <i></i><i></i><i></i><i></i>
+              </div>
+            </div>
+
+            <div class="scene scene-clock" data-scene="5">
+              <h2>오디오 길이가<br /><mark>전환 시점</mark>을 정한다</h2>
+              <div class="clock-panel">
+                <div class="clock-face"><i></i><b>26.4s</b></div>
+                <div class="wave-bars" aria-hidden="true">
+                  <span></span><span></span><span></span><span></span><span></span><span></span>
+                </div>
+                <p>decodeAudioData → duration → scene timeline</p>
+              </div>
+            </div>
+
+            <div class="scene scene-matrix" data-scene="6">
+              <h2>5분은<br /><mark>설명 밀도</mark>로 만든다</h2>
+              <div class="metric-grid">
+                <div><span>장면</span><b>14</b></div>
+                <div class="selected"><span>길이</span><b>300s</b></div>
+                <div><span>역할</span><b>7</b></div>
+                <div><span>voice</span><b>10</b></div>
+              </div>
+            </div>
+
+            <div class="scene scene-code" data-scene="7">
+              <h2>프롬프트는<br /><mark>제작 데이터</mark>를 출력한다</h2>
+              <div class="code-board" aria-label="Prompt output schema">
+                <span>{</span>
+                <span>"visual_layout": "pipeline",</span>
+                <span>"narration": "long Korean script",</span>
+                <span>"duration_floor_seconds": 24,</span>
+                <span>"expansion_target_if_short": "add failure case"</span>
+                <span>}</span>
+              </div>
+            </div>
+
+            <div class="scene scene-harness" data-scene="8">
+              <h2>검수는 느낌이 아니라<br /><mark>숫자</mark>로 한다</h2>
+              <div class="pipeline">
+                <span>generate</span>
+                <span>decode</span>
+                <span>measure</span>
+                <span>fail/pass</span>
+                <span>sync</span>
+              </div>
+            </div>
+
+            <div class="scene scene-qa" data-scene="9">
+              <h2>짧으면<br /><mark>원고를 확장</mark>한다</h2>
+              <div class="qa-table">
+                <div><b>Check</b><b>Action</b></div>
+                <div><span>total &lt; 300s</span><span>fail build</span></div>
+                <div><span>thin scene</span><span>add example</span></div>
+                <div><span>silent gap</span><span>reject</span></div>
+              </div>
+            </div>
+
+            <div class="scene scene-spectrum" data-scene="10">
+              <h2>목소리는<br /><mark>품질 변수</mark>다</h2>
+              <div class="spectrum">
+                <span>차분</span>
+                <div class="bar"><i></i></div>
+                <span>밝음</span>
+              </div>
+              <div class="decision-card">
+                <b>승인 기준</b>
+                <p>기본값은 cedar. 필요하면 10개 voice를 짧게 비교한다.</p>
+              </div>
+            </div>
+
+            <div class="scene scene-clean" data-scene="11">
+              <h2>큰 하단 자막 대신<br /><mark>장면 자체</mark>가 말한다</h2>
+              <div class="frame-stack">
+                <article><b>clean title</b><span>짧은 화면 문장</span></article>
+                <article><b>structured HTML</b><span>카드, 표, 흐름도</span></article>
+                <article><b>small chrome</b><span>타임코드만 작게</span></article>
+              </div>
+            </div>
+
+            <div class="scene scene-render" data-scene="12">
+              <h2>렌더는<br /><mark>장면 단위</mark>로 검수한다</h2>
+              <div class="viewport-wall">
+                <div class="viewport desktop"><span>desktop 16:9</span></div>
+                <div class="viewport tablet"><span>tablet crop</span></div>
+                <div class="viewport phone"><span>mobile stack</span></div>
+              </div>
+            </div>
+
+            <div class="scene scene-final" data-scene="13">
+              <h2>반복 가능한<br /><mark>영상 제작 과정</mark></h2>
+              <div class="route-line">
+                <span>prompt</span>
+                <span>html</span>
+                <span>voice</span>
+                <span>measure</span>
+                <span>ship</span>
+              </div>
+              <div class="final-stamp">AUDIO-SYNCED HTML VIDEO</div>
+            </div>
+
+            <div class="caption" id="caption">재생을 누르면 TTS와 장면이 같이 시작됩니다.</div>
+            <div class="timecode" id="timecode">00:00 / 06:04</div>
+            <div class="stage-progress"><i id="stageProgress"></i></div>
+          </div>
+        </div>
+
+        <div class="controls" id="controls">
+          <button class="primary" id="playBtn" type="button" aria-label="Play or pause">
+            <span id="playIcon">Play</span>
+          </button>
+          <button id="restartBtn" type="button">Restart</button>
+          <button id="muteBtn" type="button">Voice On</button>
+          <button id="cleanBtn" type="button">Clean View</button>
+          <label class="voice-control">
+            <span>Version</span>
+            <select id="voiceSelect" aria-label="Voice selection"></select>
+          </label>
+          <label class="voice-control compact">
+            <span>Rate</span>
+            <input id="rateInput" type="range" min="0.75" max="1.25" step="0.05" value="0.95" />
+          </label>
+          <a class="voice-sample-link" href="./voice-samples.html">Voice Samples</a>
+          <span class="tts-status" id="ttsStatus">Checking voice backend</span>
+        </div>
+
+        <section class="download-panel" aria-label="YouTube download">
+          <div>
+            <p class="panel-kicker">DOWNLOAD</p>
+            <h2>YouTube 16:9 export</h2>
+          </div>
+          <button class="primary" id="downloadBtn" type="button">Render 1080p WebM</button>
+          <a class="download-link" id="downloadLink" href="#" download hidden>Download ready</a>
+          <span class="download-status" id="downloadStatus">Preview first, then render.</span>
+        </section>
+      </section>
+
+      <aside class="review-panel script-panel" id="scriptPanel" aria-label="Production review">
+        <div>
+          <p class="panel-kicker">PRODUCTION REVIEW</p>
+          <h2 id="scriptTitle">Topic brief first</h2>
+        </div>
+        <div class="version-panel">
+          <p class="panel-kicker">VOICE VERSIONS</p>
+          <div class="version-links" id="versionLinks"></div>
+        </div>
+        <section class="brief-panel" id="briefPanel" aria-label="Topic discussion and prompt">
+          <div class="brief-heading">
+            <div>
+              <p class="panel-kicker">TOPIC BRIEF</p>
+              <h2 id="briefTitle">Review before generation</h2>
+            </div>
+            <span id="briefRoute">not prepared</span>
+          </div>
+          <div class="brief-grid">
+            <article class="brief-card wide">
+              <h3>Generation Prompt</h3>
+              <pre id="promptPreview">Discuss Topic을 누르면 AI가 사용할 제작 프롬프트가 여기에 표시됩니다.</pre>
+            </article>
+            <article class="brief-card">
+              <h3>TTS Voice Prompt</h3>
+              <pre id="voicePromptPreview">목소리 톤 지시문이 여기에 표시됩니다.</pre>
+            </article>
+            <article class="brief-card">
+              <h3>Discussion Points</h3>
+              <ul id="discussionList">
+                <li>주제 방향을 먼저 확인합니다.</li>
+              </ul>
+            </article>
+            <article class="brief-card wide">
+              <h3>Verified Sources</h3>
+              <div class="brief-sources" id="briefSources">
+                <span><b>0</b><span>Discuss Topic 후 검증된 출처가 표시됩니다.</span><small>pending</small></span>
+              </div>
+            </article>
+          </div>
+        </section>
+        <section class="script-section" aria-label="Narration script">
+          <div class="script-section-heading">
+            <p class="panel-kicker">NARRATION SCRIPT</p>
+            <span>caption + actual spoken script</span>
+          </div>
+          <ol id="scriptList"></ol>
+        </section>
+      </aside>
+    </main>
+    <script src="./app.js"></script>
+  </body>
+</html>

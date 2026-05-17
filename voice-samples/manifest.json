@@ -1,0 +1,89 @@
+{
+  "generatedAt": "2026-05-13T20:49:10.286Z",
+  "rootUrl": "http://127.0.0.1:5173",
+  "provider": "codex-oauth-realtime",
+  "model": "gpt-realtime-2",
+  "sampleText": "이 문장은 목소리 비교용 샘플입니다. 같은 원고를 열 개의 목소리로 생성해서, 설명형 HTML 영상에 가장 자연스럽게 맞는 톤을 고릅니다.",
+  "voices": [
+    {
+      "index": 1,
+      "voice": "marin",
+      "file": "voice-samples/01-marin.wav",
+      "bytes": 516044,
+      "model": "gpt-realtime-2",
+      "route": "codex-oauth-realtime"
+    },
+    {
+      "index": 2,
+      "voice": "cedar",
+      "file": "voice-samples/02-cedar.wav",
+      "bytes": 504044,
+      "model": "gpt-realtime-2",
+      "route": "codex-oauth-realtime"
+    },
+    {
+      "index": 3,
+      "voice": "coral",
+      "file": "voice-samples/03-coral.wav",
+      "bytes": 532844,
+      "model": "gpt-realtime-2",
+      "route": "codex-oauth-realtime"
+    },
+    {
+      "index": 4,
+      "voice": "ballad",
+      "file": "voice-samples/04-ballad.wav",
+      "bytes": 544844,
+      "model": "gpt-realtime-2",
+      "route": "codex-oauth-realtime"
+    },
+    {
+      "index": 5,
+      "voice": "verse",
+      "file": "voice-samples/05-verse.wav",
+      "bytes": 578444,
+      "model": "gpt-realtime-2",
+      "route": "codex-oauth-realtime"
+    },
+    {
+      "index": 6,
+      "voice": "sage",
+      "file": "voice-samples/06-sage.wav",
+      "bytes": 600044,
+      "model": "gpt-realtime-2",
+      "route": "codex-oauth-realtime"
+    },
+    {
+      "index": 7,
+      "voice": "shimmer",
+      "file": "voice-samples/07-shimmer.wav",
+      "bytes": 576044,
+      "model": "gpt-realtime-2",
+      "route": "codex-oauth-realtime"
+    },
+    {
+      "index": 8,
+      "voice": "alloy",
+      "file": "voice-samples/08-alloy.wav",
+      "bytes": 516044,
+      "model": "gpt-realtime-2",
+      "route": "codex-oauth-realtime"
+    },
+    {
+      "index": 9,
+      "voice": "ash",
+      "file": "voice-samples/09-ash.wav",
+      "bytes": 528044,
+      "model": "gpt-realtime-2",
+      "route": "codex-oauth-realtime"
+    },
+    {
+      "index": 10,
+      "voice": "echo",
+      "file": "voice-samples/10-echo.wav",
+      "bytes": 494444,
+      "model": "gpt-realtime-2",
+      "route": "codex-oauth-realtime"
+    }
+  ]
+}

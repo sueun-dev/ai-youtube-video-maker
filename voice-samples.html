@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>OpenAI Voice Samples</title>
+    <link rel="stylesheet" href="./styles.css" />
+    <style>
+      body {
+        min-height: 100vh;
+      }
+
+      .sample-page {
+        width: min(72rem, calc(100% - 2rem));
+        margin: 0 auto;
+        padding: 2rem 0 3rem;
+      }
+
+      .sample-header {
+        display: grid;
+        gap: 0.7rem;
+        margin-bottom: 1.2rem;
+      }
+
+      .sample-header h1 {
+        margin: 0;
+        font-size: clamp(2rem, 5vw, 4.4rem);
+        line-height: 1.05;
+        letter-spacing: 0;
+      }
+
+      .sample-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr));
+        gap: 0.75rem;
+      }
+
+      .sample-card {
+        display: grid;
+        gap: 0.85rem;
+        padding: 1rem;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: rgba(255, 255, 255, 0.05);
+      }
+
+      .sample-card h2 {
+        margin: 0;
+        font-size: 1.1rem;
+        letter-spacing: 0;
+      }
+
+      .sample-card audio {
+        width: 100%;
+      }
+
+      .back-link {
+        color: var(--hot-2);
+        font-weight: 850;
+        text-decoration: none;
+      }
+    </style>
+  </head>
+  <body>
+    <main class="sample-page">
+      <header class="sample-header">
+        <a class="back-link" href="./index.html">Back to video</a>
+        <p class="panel-kicker">VOICE SAMPLE MANIFEST</p>
+        <h1>10개 OAuth Realtime 목소리 비교</h1>
+        <p id="sampleMeta" class="tts-status">Loading manifest</p>
+      </header>
+      <section class="sample-grid" id="sampleGrid" aria-label="Voice sample list"></section>
+    </main>
+    <script>
+      async function loadSamples() {
+        const grid = document.querySelector("#sampleGrid");
+        const meta = document.querySelector("#sampleMeta");
+        try {
+          const response = await fetch("./voice-samples/manifest.json", { cache: "no-store" });
+          if (!response.ok) throw new Error("manifest missing");
+          const manifest = await response.json();
+          meta.textContent = `${manifest.provider} ${manifest.model} · ${manifest.voices.length} voices`;
+          meta.classList.add("openai");
+          grid.innerHTML = manifest.voices
+            .map(
+              (item) => `
+                <article class="sample-card">
+                  <h2>${String(item.index).padStart(2, "0")}. ${item.voice}</h2>
+                  <audio controls preload="metadata" src="./${item.file}"></audio>
+                </article>
+              `,
+            )
+            .join("");
+        } catch (error) {
+          meta.textContent = "Run npm run voices first.";
+          meta.classList.add("fallback");
+          grid.innerHTML = "";
+        }
+      }
+
+      loadSamples();
+    </script>
+  </body>
+</html>

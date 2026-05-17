@@ -1,0 +1,31 @@
+{
+  "name": "ai-youtube-video-maker",
+  "version": "0.1.0",
+  "description": "Create YouTube-ready videos from a topic using AI scripts, HTML scenes, and TTS narration.",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "keywords": [
+    "ai-youtube-video-maker",
+    "ai-video-generator",
+    "youtube-video-generator",
+    "youtube-video-maker",
+    "script-to-video",
+    "topic-to-video",
+    "text-to-video",
+    "tts-video",
+    "text-to-speech",
+    "openai",
+    "gpt-realtime",
+    "html-video",
+    "browser-video",
+    "webm",
+    "creator-tools"
+  ],
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --check app.js && node --check server.js && python3 -m py_compile scripts/oauth_manifest.py scripts/oauth_realtime_tts.py",
+    "measure": "node scripts/measure_video_audio.mjs",
+    "voices": "node scripts/generate_voice_samples.mjs"
+  }
+}
