@@ -16,6 +16,7 @@ const oauthHelper = join(root, "scripts/oauth_realtime_tts.py");
 const oauthManifestHelper = join(root, "scripts/oauth_manifest.py");
 const realtimeModel = process.env.OPENAI_REALTIME_MODEL || "gpt-realtime-2";
 const realtimeReasoningEffort = process.env.OPENAI_REALTIME_REASONING_EFFORT || "xhigh";
+const manifestHelperTimeoutMs = Math.max(15000, Number(process.env.OPENAI_MANIFEST_TIMEOUT_MS) || 45000);
 const realtimeVoices = ["marin", "cedar", "alloy", "ash", "ballad", "coral", "echo", "sage", "shimmer", "verse"];
 const openaiApiVoices = [
   "marin",
@@ -454,12 +455,14 @@ async function researchTopic(topic, style) {
       }
       if (byUrl.size >= 5) break;
     }
-    const candidates = [...byUrl.values()]
-      .sort(
-        (a, b) =>
-          Number(/openai\.com|platform\.openai\.com|model-spec\.openai\.com/.test(b.host)) -
-          Number(/openai\.com|platform\.openai\.com|model-spec\.openai\.com/.test(a.host)),
+    const officialHostScore = (host) =>
+      /openai\.com|platform\.openai\.com|model-spec\.openai\.com|blog\.google|android\.com|android-developers\.googleblog\.com|developers\.google\.com/.test(
+        host,
       )
+        ? 1
+        : 0;
+    const candidates = [...byUrl.values()]
+      .sort((a, b) => officialHostScore(b.host) - officialHostScore(a.host))
       .slice(0, 5);
     research.sources = await verifySources(candidates);
     if (!research.sources.length) research.warnings.push("No search results parsed.");
@@ -983,33 +986,97 @@ function normalizeManifest(
   };
 }
 
+function sourceHintAt(sources, index) {
+  if (!sources.length) return null;
+  const source = sources[index % sources.length];
+  return {
+    title: stripHtml(source.title || source.host || "검증된 출처"),
+    host: stripHtml(source.host || hostOf(source.url) || "source"),
+    snippet: stripHtml(source.snippet || ""),
+  };
+}
+
+function shortTopicLabel(topic) {
+  const clean = stripHtml(topic);
+  const beforeColon = clean.split(/[:：-]/)[0]?.trim();
+  const candidate = beforeColon && beforeColon.length >= 8 ? beforeColon : clean;
+  return clipText(candidate, "이 주제", 42);
+}
+
+function fallbackSpeech(topicLabel, title, source, index, hasSources) {
+  const angles = [
+    "사용자가 실제로 느낄 변화",
+    "제품 구조가 바뀌는 지점",
+    "출시와 지원 범위",
+    "개인정보와 통제권",
+    "개발자와 생태계 영향",
+  ];
+  const angle = angles[index % angles.length];
+  if (/결론|정리/.test(title)) {
+    return `정리하면 ${topicLabel}은 단순 기능 추가가 아니라 플랫폼 방향 변화입니다. 마지막 판단은 출처와 출시 범위를 기준으로 둡니다.`;
+  }
+  if (source) {
+    const snippet = clipText(source.snippet, "", 86);
+    if (snippet) {
+      return `${title} 장면은 ${source.host}의 확인된 내용에서 출발합니다. ${snippet} 이 근거를 화면의 한 문장과 연결해 다음 질문으로 넘깁니다.`;
+    }
+    return `이 장면에서는 ${topicLabel}을 ${angle} 관점에서 봅니다. ${source.host} 기준으로 확인된 변화와 해석을 분리합니다.`;
+  }
+  const sourceLine = hasSources ? "확인된 출처와 맞지 않는 추측은 빼고," : "최신 사실처럼 보이는 단정은 피하고,";
+  return `이 장면에서는 ${topicLabel}을 ${angle} 관점에서 봅니다. ${sourceLine} 한 가지 질문만 다음 장면으로 넘깁니다.`;
+}
+
 function fallbackManifest(topic, sceneCount = 30, style = "explainer", research = { required: false, sources: [] }) {
+  const topicLabel = shortTopicLabel(topic);
+  const sourceList = normalizeSources(research.sources);
+  const hasSources = sourceList.length > 0;
   const plan = [
-    ["hero", `${topic}를 한 번에 이해하기`, topic.slice(0, 18)],
-    ["compare", "왜 그냥 설명하면 부족한가", "부족한가"],
-    ["spec", "먼저 기준을 세운다", "기준"],
-    ["cards", "핵심은 세 갈래로 나뉜다", "세 갈래"],
-    ["flow", "흐름은 질문에서 판단으로 간다", "흐름"],
-    ["metrics", "5분 영상은 밀도로 만든다", "밀도"],
-    ["code", "원고는 화면 구조를 가진다", "구조"],
-    ["qa", "틀린 주장은 바로 걸러야 한다", "걸러야"],
-    ["pipeline", "제작 순서는 고정한다", "제작 순서"],
-    ["clean", "화면은 짧고 정확해야 한다", "짧고"],
+    ["hero", `${topicLabel}의 핵심 변화`, topicLabel.split(/\s+/)[0] || topicLabel],
+    ["compare", "단순 업데이트인지 플랫폼 전환인지 가른다", "플랫폼 전환"],
+    ["spec", "공식 출처를 먼저 기준으로 둔다", "공식 출처"],
+    ["cards", "변화는 경험, 기기, 개발자 흐름으로 나뉜다", "세 갈래"],
+    ["flow", "기능 발표에서 사용 장면으로 이동한다", "사용 장면"],
+    ["metrics", "확인된 일정과 적용 범위를 분리한다", "적용 범위"],
+    ["code", "AI 기능은 화면보다 조건이 중요하다", "조건"],
+    ["qa", "과장된 해석은 실패 조건으로 둔다", "실패 조건"],
+    ["pipeline", "출처에서 장면까지 한 방향으로 만든다", "출처"],
+    ["clean", "화면은 한 주장만 보여준다", "한 주장"],
+    ["clock", "도입 뒤에는 긴장감을 남긴다", "긴장감"],
+    ["compare", "사용자에게 보이는 변화와 내부 변화를 나눈다", "보이는 변화"],
+    ["spec", "개인정보와 온디바이스 경계를 따로 본다", "경계"],
+    ["cards", "새 기능은 맥락, 행동, 제한으로 설명한다", "제한"],
+    ["flow", "전화기에서 자동차와 노트북까지 흐름을 넓힌다", "흐름"],
+    ["metrics", "지원 기기와 출시 시점은 숫자로 고정한다", "숫자"],
+    ["qa", "출처가 약한 주장은 화면에서 낮춘다", "낮춘다"],
+    ["pipeline", "내레이션은 근거 다음에 해석을 붙인다", "근거"],
+    ["clean", "긴 설명은 음성으로 보내고 화면은 줄인다", "줄인다"],
+    ["render", "장면 변화는 10초 단위로 유지한다", "10초"],
+    ["compare", "편리함과 통제권을 같이 놓고 본다", "통제권"],
+    ["spec", "개발자 관점의 변화도 한 장면으로 분리한다", "개발자"],
+    ["cards", "시청자가 기억할 세 문장을 만든다", "세 문장"],
+    ["flow", "마지막 전에는 왜 중요한지 다시 묶는다", "다시 묶는다"],
+    ["metrics", "볼만한 영상은 길이와 밀도를 함께 맞춘다", "밀도"],
+    ["qa", "마지막 검수는 출처와 말의 일치다", "일치"],
+    ["pipeline", "생성 실패 시에도 템플릿은 멈추지 않는다", "멈추지 않는다"],
+    ["clean", "정리는 짧게, 출처는 분명하게 둔다", "분명하게"],
+    ["final", `${topicLabel}의 결론`, "결론"],
   ];
   const scenes = Array.from({ length: sceneCount }, (_, index) => {
     const [layout, title, mark] =
-      index === sceneCount - 1 ? ["final", `${topic}의 결론`, "결론"] : plan[index % plan.length];
+      index === sceneCount - 1 ? ["final", `${topicLabel}의 결론`, "결론"] : plan[index % plan.length];
+    const source = sourceHintAt(sourceList, index);
     return normalizeScene(
       {
         layout,
         title,
         mark,
         caption: `${title}.`,
-        speech: `${topic}를 다룰 때 이 장면은 ${title}에 집중합니다. 화면은 한 문장만 강하게 보여주고, 음성은 맥락과 이유를 이어서 설명해 다음 장면으로 자연스럽게 넘어가게 합니다.`,
+        speech: fallbackSpeech(topicLabel, title, source, index, hasSources),
       },
       index,
       sceneCount,
       topic,
+      { style },
     );
   });
   return normalizeManifest(
@@ -1214,7 +1281,7 @@ async function createManifest(req, res) {
         const { stdout } = await runProcess(oauthPython, [oauthManifestHelper, requestPath], {
           cwd: oauthRoot,
           env: { ...process.env, PYTHONPATH: `${oauthRoot}/src` },
-          timeoutMs: 300000,
+          timeoutMs: manifestHelperTimeoutMs,
         });
         const manifest = normalizeManifest(extractJson(stdout), topic, sceneCount, style, research);
         const quality = scoreManifest(manifest, research);

@@ -1170,6 +1170,7 @@ let currentManifest = {
   sources: [],
   scenes,
 };
+applyInitialBuilderParams();
 appShell.dataset.template = currentManifest.style;
 let initialAutoGenerateStarted = false;
 let currentBrief = null;
@@ -1388,6 +1389,21 @@ function topicSignature() {
     style: styleSelect?.value || "explainer",
     notes: topicNotes?.value.replace(/\s+/g, " ").trim() || "",
   });
+}
+
+function applyInitialBuilderParams() {
+  const topicParam = params.get("topic")?.replace(/\s+/g, " ").trim();
+  const notesParam = params.get("notes")?.replace(/\s+/g, " ").trim();
+  const styleParam = params.get("style");
+  if (topicParam && topicInput) {
+    topicInput.value = topicParam;
+    currentManifest.topic = topicParam;
+  }
+  if (notesParam && topicNotes) topicNotes.value = notesParam;
+  if (styleParam && ["explainer", "documentary", "story", "emotional"].includes(styleParam)) {
+    if (styleSelect) styleSelect.value = styleParam;
+    currentManifest.style = styleParam;
+  }
 }
 
 function resetBriefReview() {
