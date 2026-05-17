@@ -100,6 +100,14 @@ Return this JSON shape:
       "subtitle": "only for hero",
       "caption": "short Korean timeline caption, no timestamp",
       "speech": "Korean narration, 1 or 2 compact sentences, about 70-115 Korean characters, matched 1:1 with this page",
+      "delivery": {{
+        "role": "hook | context | evidence | tension | transition | synthesis | conclusion | sources",
+        "tone": "short voice tone, e.g. quiet tension or neutral evidence",
+        "pace": "slow opening | steady | measured | slightly tighter | clean and forward | slightly slower",
+        "energy": "controlled | neutral | restrained | serious | focused | confident | certain",
+        "pause": "short pause guidance for this page",
+        "instruction": "one short English TTS direction for gpt-realtime-2"
+      }},
       "panels": [{{"title":"short","lines":["short","short","short"],"tone":"muted"}}, {{"title":"short","lines":["short","short","short"],"tone":"hot"}}],
       "specs": [["label","value"],["label","value"],["label","value"],["label","value"]],
       "cards": [["A","title","body"],["B","title","body"],["C","title","body"]],
@@ -126,6 +134,7 @@ Rules:
 - Screen text must be short. Put details in speech, not huge captions.
 - Captions must not include timecodes like 0:10 or 00:10.
 - Speech must not be a title repeat. It should explain, transition, and make the next page feel natural, but stay around 70-130 Korean characters for about 10 seconds of TTS.
+- Delivery must default to a restrained Korean documentary narrator. Vary emotion through pace, pauses, quiet tension, source-neutral precision, and resolved certainty. Do not write theatrical acting directions.
 - Every scene needs a specific angle. Avoid generic repeated titles like "핵심 정리", "중요한 변화", or "이해하기" unless the wording is made specific.
 - Make the flow feel like a real 5 minute YouTube video: hook, context, rising questions, evidence or examples, tension, synthesis, conclusion, then sources when available.
 """.strip()

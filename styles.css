@@ -1532,7 +1532,8 @@ input[type="range"] {
 .script-meta {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
+  flex-wrap: wrap;
   gap: 0.65rem;
 }
 
@@ -1541,6 +1542,9 @@ input[type="range"] {
   font-size: 0.74rem;
   font-weight: 900;
   text-transform: uppercase;
+  padding: 0.1rem 0.45rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
 }
 
 .script-panel strong {

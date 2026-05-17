@@ -27,6 +27,7 @@ Most simple AI video workflows produce a script first and then force visuals aro
 - AI scene manifest generation
 - Verified source collection for news or factual topics
 - 36-scene long-form planning model
+- Scene-level documentary delivery directions for tone, pace, pauses, tension, and conclusion weight
 - TTS narration with voice-specific full versions
 - Audio-first timeline sync
 - OpenAI Realtime voice support through a local OAuth bridge

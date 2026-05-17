@@ -56,6 +56,14 @@ Return only JSON with this schema:
       "visual_layout": "hero | split-board | timeline | metric-grid | pipeline | spectrum | final | sources",
       "on_screen_caption": "one concise caption under 80 Korean characters",
       "narration": "one narration beat that can support about 9-11 seconds of speech",
+      "delivery": {
+        "role": "hook | context | evidence | tension | transition | synthesis | conclusion | sources",
+        "tone": "short documentary voice tone",
+        "pace": "slow opening | steady | measured | slightly tighter | clean and forward | slightly slower",
+        "energy": "controlled | neutral | restrained | serious | focused | confident | certain",
+        "pause": "where the narrator should leave space",
+        "instruction": "short TTS direction for gpt-realtime-2"
+      },
       "motion_notes": "specific motion or state change for this page",
       "expansion_target_if_short": "what to add if measured audio is under the floor",
       "sources": [{ "title": "source title", "url": "https://...", "host": "example.com" }]
@@ -92,6 +100,7 @@ Page planning rules:
 - Use 36 pages for a six minute explainer.
 - Each narration block should carry one complete idea, not one slogan.
 - Each page should target about 10 seconds; if audio runs longer, the page waits for the audio.
+- Every page should include a delivery role. Keep the default style documentary and vary emotion through pace, pauses, quiet tension, careful source delivery, and resolved certainty rather than acting.
 - The first pages define the problem and the promise.
 - The middle pages must explain the mechanism with concrete system behavior.
 - At least one page must explain the validation loop: generate, decode, measure, expand, regenerate.

@@ -1184,20 +1184,132 @@ function formatTime(seconds) {
   return `${min}:${sec}`;
 }
 
+const DELIVERY_FALLBACKS = {
+  hook: {
+    tone: "quiet tension",
+    pace: "slow opening",
+    energy: "controlled",
+    pause: "short pause before the key claim",
+    instruction: "Start low and controlled, with documentary tension. Do not sound dramatic or promotional.",
+  },
+  context: {
+    tone: "clear context",
+    pace: "steady",
+    energy: "neutral",
+    pause: "light pause between ideas",
+    instruction: "Explain the context cleanly. Keep the voice grounded and easy to follow.",
+  },
+  evidence: {
+    tone: "neutral evidence",
+    pace: "measured",
+    energy: "restrained",
+    pause: "pause around numbers or source-backed claims",
+    instruction: "Sound precise and careful. Do not add emotional color to factual or source-backed claims.",
+  },
+  tension: {
+    tone: "rising concern",
+    pace: "slightly tighter",
+    energy: "serious",
+    pause: "hold briefly before the consequence",
+    instruction: "Increase tension slightly while staying documentary. Avoid acting, shouting, or melodrama.",
+  },
+  transition: {
+    tone: "curious transition",
+    pace: "clean and forward",
+    energy: "focused",
+    pause: "brief reset at the end",
+    instruction: "Carry the viewer into the next idea. Keep momentum without rushing.",
+  },
+  synthesis: {
+    tone: "connected insight",
+    pace: "steady",
+    energy: "confident",
+    pause: "pause before the synthesis",
+    instruction: "Connect the earlier points with calm confidence. Make the logic feel complete.",
+  },
+  conclusion: {
+    tone: "resolved conclusion",
+    pace: "slightly slower",
+    energy: "certain",
+    pause: "longer pause before the final sentence",
+    instruction: "Sound resolved and certain. Slow down slightly in the last sentence so the ending lands.",
+  },
+  sources: {
+    tone: "source note",
+    pace: "neutral",
+    energy: "low",
+    pause: "clean pauses between source groups",
+    instruction: "Read this as a source note. Keep it neutral, factual, and concise.",
+  },
+};
+
+function fallbackDeliveryRole(scene, index) {
+  const layout = scene?.layout || "";
+  if (index === 0 || layout === "hero") return "hook";
+  if (layout === "sources") return "sources";
+  if (layout === "final" || index >= scenes.length - 2) return "conclusion";
+  if (["spec", "metrics", "qa", "code"].includes(layout)) return "evidence";
+  if (["compare", "spectrum", "clock"].includes(layout)) return "tension";
+  if (["flow", "pipeline", "render"].includes(layout)) return "transition";
+  if (["cards", "clean"].includes(layout)) return "synthesis";
+  return "context";
+}
+
+function sceneDelivery(scene, index) {
+  const raw = scene?.delivery && typeof scene.delivery === "object" ? scene.delivery : {};
+  const role = DELIVERY_FALLBACKS[raw.role] ? raw.role : fallbackDeliveryRole(scene, index);
+  const fallback = DELIVERY_FALLBACKS[role] || DELIVERY_FALLBACKS.context;
+  return {
+    role,
+    tone: raw.tone || fallback.tone,
+    pace: raw.pace || fallback.pace,
+    energy: raw.energy || fallback.energy,
+    pause: raw.pause || fallback.pause,
+    instruction: raw.instruction || fallback.instruction,
+  };
+}
+
+function buildSceneVoiceInstructions(scene, index) {
+  const delivery = sceneDelivery(scene, Math.max(0, index));
+  const style = currentManifest?.style || "documentary";
+  const styleLine =
+    style === "story"
+      ? "Keep story tension controlled, but keep the voice documentary rather than theatrical."
+      : style === "emotional"
+        ? "Allow restrained warmth and human weight, but avoid melodrama."
+        : style === "documentary"
+          ? "Use a restrained Korean documentary narrator tone."
+          : "Use a clear Korean explainer narrator tone.";
+  return [
+    "Speak in natural Korean.",
+    styleLine,
+    "Use the same voice identity for the whole video.",
+    "Vary delivery only through pace, pauses, quiet tension, certainty, and emphasis.",
+    "Avoid customer-service warmth, overacting, shouting, and promotional excitement.",
+    `Scene delivery role: ${delivery.role}.`,
+    `Tone: ${delivery.tone}. Pace: ${delivery.pace}. Energy: ${delivery.energy}.`,
+    `Pause direction: ${delivery.pause}.`,
+    delivery.instruction,
+    "Read the supplied Korean narration exactly. Do not add, remove, or translate words.",
+  ].join(" ");
+}
+
 function renderScriptList() {
   scriptList.innerHTML = scenes
-    .map(
-      (scene, index) => `
+    .map((scene, index) => {
+      const delivery = sceneDelivery(scene, index);
+      return `
         <li data-script-index="${index}">
           <div class="script-meta">
             <time>${formatTime(sceneStarts[index] || 0)}</time>
             <span>${escapeHtml(scene.layout || "scene")}</span>
+            <span>${escapeHtml(delivery.role)}</span>
           </div>
           <strong>${escapeHtml(scene.caption || scene.title || `Scene ${index + 1}`)}</strong>
           <p>${escapeHtml(scene.speech || "")}</p>
         </li>
-      `,
-    )
+      `;
+    })
     .join("");
 }
 
@@ -1430,8 +1542,9 @@ function stopSpeech() {
 
 async function fetchOpenAiAudioBuffer(scene, options = {}) {
   const voice = options.voice || selectedVoice();
-  const cacheKey = JSON.stringify({ text: scene.speech, voice });
   const sceneIndex = scenes.indexOf(scene);
+  const instructions = buildSceneVoiceInstructions(scene, sceneIndex);
+  const cacheKey = JSON.stringify({ text: scene.speech, voice, instructions });
   if (audioBufferCache.has(cacheKey)) {
     const cached = audioBufferCache.get(cacheKey);
     if (voice === selectedVoice()) updateSceneDuration(sceneIndex, cached.duration);
@@ -1454,8 +1567,7 @@ async function fetchOpenAiAudioBuffer(scene, options = {}) {
       body: JSON.stringify({
         input: scene.speech,
         voice,
-        instructions:
-          "Speak in natural Korean, like a calm technical narrator. Avoid a customer-service tone. Keep it confident, clear, and slightly documentary.",
+        instructions,
       }),
     });
 

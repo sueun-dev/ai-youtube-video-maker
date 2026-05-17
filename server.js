@@ -490,6 +490,99 @@ function normalizeStringList(value, fallback, size = 5, max = 34) {
   return list.length ? list.slice(0, size) : fallback;
 }
 
+const deliveryProfiles = {
+  hook: {
+    tone: "quiet tension",
+    pace: "slow opening",
+    energy: "controlled",
+    pause: "short pause before the key claim",
+    instruction: "Start low and controlled, with documentary tension. Do not sound dramatic or promotional.",
+  },
+  context: {
+    tone: "clear context",
+    pace: "steady",
+    energy: "neutral",
+    pause: "light pause between ideas",
+    instruction: "Explain the context cleanly. Keep the voice grounded and easy to follow.",
+  },
+  evidence: {
+    tone: "neutral evidence",
+    pace: "measured",
+    energy: "restrained",
+    pause: "pause around numbers or source-backed claims",
+    instruction: "Sound precise and careful. Do not add emotional color to factual or source-backed claims.",
+  },
+  tension: {
+    tone: "rising concern",
+    pace: "slightly tighter",
+    energy: "serious",
+    pause: "hold briefly before the consequence",
+    instruction: "Increase tension slightly while staying documentary. Avoid acting, shouting, or melodrama.",
+  },
+  transition: {
+    tone: "curious transition",
+    pace: "clean and forward",
+    energy: "focused",
+    pause: "brief reset at the end",
+    instruction: "Carry the viewer into the next idea. Keep momentum without rushing.",
+  },
+  synthesis: {
+    tone: "connected insight",
+    pace: "steady",
+    energy: "confident",
+    pause: "pause before the synthesis",
+    instruction: "Connect the earlier points with calm confidence. Make the logic feel complete.",
+  },
+  conclusion: {
+    tone: "resolved conclusion",
+    pace: "slightly slower",
+    energy: "certain",
+    pause: "longer pause before the final sentence",
+    instruction: "Sound resolved and certain. Slow down slightly in the last sentence so the ending lands.",
+  },
+  sources: {
+    tone: "source note",
+    pace: "neutral",
+    energy: "low",
+    pause: "clean pauses between source groups",
+    instruction: "Read this as a source note. Keep it neutral, factual, and concise.",
+  },
+};
+
+function deliveryRoleFor(layout, index, sceneCount) {
+  if (index === 0 || layout === "hero") return "hook";
+  if (layout === "sources") return "sources";
+  if (layout === "final" || index >= sceneCount - 2) return "conclusion";
+  if (["spec", "metrics", "qa", "code"].includes(layout)) return "evidence";
+  if (["compare", "spectrum", "clock"].includes(layout)) return "tension";
+  if (["flow", "pipeline", "render"].includes(layout)) return "transition";
+  if (["cards", "clean"].includes(layout)) return "synthesis";
+  return "context";
+}
+
+function normalizeDelivery(value, layout, index, sceneCount, style = "explainer") {
+  const raw = typeof value === "object" && value ? value : {};
+  let role = typeof value === "string" ? value : raw.role;
+  role = deliveryProfiles[role] ? role : deliveryRoleFor(layout, index, sceneCount);
+  const profile = deliveryProfiles[role] || deliveryProfiles.context;
+  const styleHint =
+    style === "story"
+      ? "Keep story tension controlled, not theatrical."
+      : style === "emotional"
+        ? "Allow warmth and human weight, but avoid melodrama."
+        : style === "documentary"
+          ? "Keep the delivery restrained and documentary."
+          : "Keep the explanation direct and clear.";
+  return {
+    role,
+    tone: clipText(raw.tone, profile.tone, 60),
+    pace: clipText(raw.pace, profile.pace, 60),
+    energy: clipText(raw.energy, profile.energy, 60),
+    pause: clipText(raw.pause, profile.pause, 90),
+    instruction: clipText(raw.instruction, `${profile.instruction} ${styleHint}`, 220),
+  };
+}
+
 function normalizeScene(raw, index, sceneCount, topic, options = {}) {
   const layouts = ["hero", "compare", "spec", "cards", "flow", "clock", "metrics", "code", "pipeline", "qa", "spectrum", "clean", "render", "final", "sources"];
   const layoutCycle = ["hero", "compare", "spec", "cards", "flow", "metrics", "code", "qa", "pipeline", "clean"];
@@ -513,6 +606,7 @@ function normalizeScene(raw, index, sceneCount, topic, options = {}) {
       520,
     ),
   };
+  scene.delivery = normalizeDelivery(raw?.delivery, layout, index, sceneCount, options.style);
 
   if (layout === "hero") {
     scene.kicker = clipText(raw?.kicker, "HTML TTS VIDEO", 32).toUpperCase();
@@ -725,7 +819,7 @@ function normalizeManifest(payload, topic, sceneCount = 30, style = "explainer",
   const sourceList = normalizeSources(research.required ? research.sources : (research.sources?.length ? research.sources : payload?.sources));
   const sourceIndex = sourceList.length ? sceneCount - 1 : undefined;
   const finalIndex = sourceList.length ? sceneCount - 2 : sceneCount - 1;
-  const options = { sourceIndex, finalIndex };
+  const options = { sourceIndex, finalIndex, style };
   const rawScenes = Array.isArray(payload?.scenes) ? payload.scenes : [];
   const padded = rawScenes.slice(0, sceneCount);
   while (padded.length < sceneCount) padded.push({});
@@ -829,17 +923,25 @@ function buildGenerationPrompt({ topic, style, notes, sceneCount, targetSeconds,
     "- If sources exist, the final scene must be a sources scene and the second-to-last scene must be the conclusion.",
     "- Do not repeat adjacent visual layouts.",
     "- Do not use generic repeated titles.",
+    "- Add delivery for each scene: role, tone, pace, energy, pause, instruction.",
+    "- Default voice direction is restrained Korean documentary narration, with scene-level variation through pace, pauses, tension, and certainty.",
     "- Fail boring drafts and regenerate with critique.",
     "- Output only JSON for the renderer.",
   ].join("\n");
 }
 
 function buildVoicePrompt(style) {
-  const base = "Speak in natural Korean, like a calm technical narrator. Keep it clear, steady, and not rushed. Do not sound like a customer-service greeting.";
-  if (style === "documentary") return `${base} Use a restrained documentary tone and leave space around factual claims.`;
-  if (style === "story") return `${base} Carry the story forward with controlled tension, not theatrical acting.`;
-  if (style === "emotional") return `${base} Keep warmth and human weight, but avoid melodrama.`;
-  return `${base} Emphasize mechanism, examples, and transitions.`;
+  const base = [
+    "Speak in natural Korean as a restrained documentary narrator.",
+    "Use the same voice for the whole video, but vary delivery by scene.",
+    "Control emotion through pace, pauses, tension, certainty, and warmth.",
+    "Avoid customer-service warmth, overacting, shouting, or promotional excitement.",
+    "Read the provided narration exactly; do not add new words.",
+  ].join(" ");
+  if (style === "documentary") return `${base} Default to neutral evidence, quiet tension in hooks, and resolved certainty in conclusions.`;
+  if (style === "story") return `${base} Carry controlled story tension while keeping the delivery documentary, not theatrical.`;
+  if (style === "emotional") return `${base} Add human weight and warmth where useful, but keep the voice grounded and unsentimental.`;
+  return `${base} Make mechanism scenes clear, transitions forward-moving, and conclusions settled.`;
 }
 
 function buildDiscussionQuestions(style, research) {
