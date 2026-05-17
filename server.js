@@ -549,10 +549,19 @@ const deliveryProfiles = {
   },
 };
 
+const deliveryAlternates = {
+  evidence: ["tension", "context", "transition"],
+  synthesis: ["transition", "context", "evidence"],
+  transition: ["synthesis", "evidence", "context"],
+  tension: ["evidence", "transition", "context"],
+  context: ["evidence", "transition", "synthesis"],
+  conclusion: ["synthesis", "transition", "evidence"],
+};
+
 function deliveryRoleFor(layout, index, sceneCount) {
   if (index === 0 || layout === "hero") return "hook";
   if (layout === "sources") return "sources";
-  if (layout === "final" || index >= sceneCount - 2) return "conclusion";
+  if (layout === "final") return "conclusion";
   if (["spec", "metrics", "qa", "code"].includes(layout)) return "evidence";
   if (["compare", "spectrum", "clock"].includes(layout)) return "tension";
   if (["flow", "pipeline", "render"].includes(layout)) return "transition";
@@ -742,6 +751,26 @@ function repairLayoutVariety(scenes, topic, sceneCount, style, options) {
   return repaired;
 }
 
+function canShiftDeliveryRole(role, index) {
+  return index > 0 && !["hook", "sources"].includes(role);
+}
+
+function alternateDeliveryRole(role, previousRole) {
+  return (deliveryAlternates[role] || ["context", "evidence", "transition"]).find((candidate) => candidate !== previousRole) || role;
+}
+
+function repairDeliveryVariety(scenes, style) {
+  let previousRole = "";
+  return scenes.map((scene, index) => {
+    let delivery = normalizeDelivery(scene.delivery, scene.layout, index, scenes.length, style);
+    if (delivery.role === previousRole && canShiftDeliveryRole(delivery.role, index)) {
+      delivery = normalizeDelivery({ role: alternateDeliveryRole(delivery.role, previousRole) }, scene.layout, index, scenes.length, style);
+    }
+    previousRole = delivery.role;
+    return { ...scene, delivery };
+  });
+}
+
 function scoreManifest(manifest, research) {
   let score = 100;
   const issues = [];
@@ -765,10 +794,12 @@ function scoreManifest(manifest, research) {
 
   const layoutCounts = new Map();
   let adjacentRepeats = 0;
+  let adjacentDeliveryRepeats = 0;
   for (let index = 0; index < scenes.length; index += 1) {
     const scene = scenes[index] || {};
     layoutCounts.set(scene.layout, (layoutCounts.get(scene.layout) || 0) + 1);
     if (index > 0 && scene.layout === scenes[index - 1]?.layout) adjacentRepeats += 1;
+    if (index > 0 && scene.delivery?.role && scene.delivery.role === scenes[index - 1]?.delivery?.role) adjacentDeliveryRepeats += 1;
     if (/^(\d{1,2}:)?\d{1,2}:\d{2}/.test(scene.caption || "")) {
       score -= 4;
       issues.push(`Scene ${index + 1} caption still has a timestamp.`);
@@ -786,6 +817,10 @@ function scoreManifest(manifest, research) {
   if (adjacentRepeats) {
     score -= Math.min(24, adjacentRepeats * 8);
     issues.push(`Adjacent layout repeats: ${adjacentRepeats}.`);
+  }
+  if (adjacentDeliveryRepeats) {
+    score -= Math.min(12, adjacentDeliveryRepeats * 4);
+    issues.push(`Adjacent delivery-role repeats: ${adjacentDeliveryRepeats}.`);
   }
 
   const titles = scenes.map((scene) => String(scene.title || "").replace(/\s+/g, "").toLowerCase()).filter(Boolean);
@@ -843,6 +878,7 @@ function normalizeManifest(payload, topic, sceneCount = 30, style = "explainer",
   }
 
   normalizedScenes = repairLayoutVariety(normalizedScenes, topic, sceneCount, style, options);
+  normalizedScenes = repairDeliveryVariety(normalizedScenes, style);
 
   return {
     title: clipText(payload?.title, `${topic} 설명 영상`, 96),

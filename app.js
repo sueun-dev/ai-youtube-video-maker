@@ -251,7 +251,7 @@ const scenes = [
     caption: "캐시는 voice별로 분리한다.",
     steps: ["text", "voice", "hash", "wav", "version"],
     speech:
-      "오디오 캐시는 원고만으로 나누면 안 됩니다. 같은 문장이라도 voice가 다르면 다른 버전입니다. 그래서 voice까지 캐시 키에 포함합니다.",
+      "오디오 캐시는 원고만으로 나누지 않습니다. 같은 문장도 voice가 다르면 다른 버전이므로, 캐시 키에 voice를 함께 넣습니다.",
   },
   {
     duration: 10,
@@ -1243,11 +1243,20 @@ const DELIVERY_FALLBACKS = {
   },
 };
 
+const DELIVERY_ALTERNATES = {
+  evidence: ["tension", "context", "transition"],
+  synthesis: ["transition", "context", "evidence"],
+  transition: ["synthesis", "evidence", "context"],
+  tension: ["evidence", "transition", "context"],
+  context: ["evidence", "transition", "synthesis"],
+  conclusion: ["synthesis", "transition", "evidence"],
+};
+
 function fallbackDeliveryRole(scene, index) {
   const layout = scene?.layout || "";
   if (index === 0 || layout === "hero") return "hook";
   if (layout === "sources") return "sources";
-  if (layout === "final" || index >= scenes.length - 2) return "conclusion";
+  if (layout === "final") return "conclusion";
   if (["spec", "metrics", "qa", "code"].includes(layout)) return "evidence";
   if (["compare", "spectrum", "clock"].includes(layout)) return "tension";
   if (["flow", "pipeline", "render"].includes(layout)) return "transition";
@@ -1255,17 +1264,45 @@ function fallbackDeliveryRole(scene, index) {
   return "context";
 }
 
+function baseDeliveryRole(scene, index) {
+  const raw = scene?.delivery && typeof scene.delivery === "object" ? scene.delivery : {};
+  return DELIVERY_FALLBACKS[raw.role] ? raw.role : fallbackDeliveryRole(scene, index);
+}
+
+function deliveryRoleCanShift(role, index) {
+  return index > 0 && !["hook", "sources"].includes(role);
+}
+
+function alternateDeliveryRole(role, previousRole) {
+  return (DELIVERY_ALTERNATES[role] || ["context", "evidence", "transition"]).find((candidate) => candidate !== previousRole) || role;
+}
+
+function deliveryRoleAt(index) {
+  let previousRole = "";
+  let role = "context";
+  for (let currentIndex = 0; currentIndex <= index; currentIndex += 1) {
+    role = baseDeliveryRole(scenes[currentIndex], currentIndex);
+    if (role === previousRole && deliveryRoleCanShift(role, currentIndex)) {
+      role = alternateDeliveryRole(role, previousRole);
+    }
+    previousRole = role;
+  }
+  return role;
+}
+
 function sceneDelivery(scene, index) {
   const raw = scene?.delivery && typeof scene.delivery === "object" ? scene.delivery : {};
-  const role = DELIVERY_FALLBACKS[raw.role] ? raw.role : fallbackDeliveryRole(scene, index);
+  const rawRole = DELIVERY_FALLBACKS[raw.role] ? raw.role : "";
+  const role = deliveryRoleAt(index);
   const fallback = DELIVERY_FALLBACKS[role] || DELIVERY_FALLBACKS.context;
+  const useRawProfile = rawRole === role;
   return {
     role,
-    tone: raw.tone || fallback.tone,
-    pace: raw.pace || fallback.pace,
-    energy: raw.energy || fallback.energy,
-    pause: raw.pause || fallback.pause,
-    instruction: raw.instruction || fallback.instruction,
+    tone: useRawProfile && raw.tone ? raw.tone : fallback.tone,
+    pace: useRawProfile && raw.pace ? raw.pace : fallback.pace,
+    energy: useRawProfile && raw.energy ? raw.energy : fallback.energy,
+    pause: useRawProfile && raw.pause ? raw.pause : fallback.pause,
+    instruction: useRawProfile && raw.instruction ? raw.instruction : fallback.instruction,
   };
 }
 
