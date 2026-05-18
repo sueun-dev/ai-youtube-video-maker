@@ -1173,7 +1173,7 @@ let providerBestVoices = {
   google: BEST_GOOGLE_TTS_VOICE,
   macos: BEST_MACOS_TTS_VOICE,
 };
-let selectedTtsProvider = normalizeTtsProvider(params.get("tts") || "openai");
+let selectedTtsProvider = normalizeTtsProvider(params.get("tts") || "gemini");
 let selectedOpenAiVoice = BEST_OPENAI_VOICE;
 let warmupToken = 0;
 const audioBufferCache = new Map();
@@ -1400,6 +1400,10 @@ function currentBestVoice() {
 }
 
 function shouldWarmFullAudio() {
+  return ["openai", "macos"].includes(selectedTtsProvider);
+}
+
+function shouldPrefetchAudio() {
   return ["openai", "macos"].includes(selectedTtsProvider);
 }
 
@@ -1630,7 +1634,7 @@ function applyManifest(manifest, voice = selectedOpenAiVoice) {
     ttsStatus.textContent = `Preparing ${selectedOpenAiVoice} via ${currentTtsProviderLabel()}`;
     ttsStatus.className = "tts-status openai";
     if (shouldWarmFullAudio()) warmAllSceneAudio(selectedOpenAiVoice);
-    else prefetchScene(0, selectedOpenAiVoice);
+    else if (shouldPrefetchAudio()) prefetchScene(0, selectedOpenAiVoice);
   }
 }
 
@@ -2436,7 +2440,7 @@ voiceSelect.addEventListener("change", async () => {
   else if (useOpenAiTts) {
     previewSelectedOpenAiVoice(selectedOpenAiVoice);
     if (shouldWarmFullAudio()) warmAllSceneAudio(selectedOpenAiVoice);
-    else prefetchScene(0, selectedOpenAiVoice);
+    else if (shouldPrefetchAudio()) prefetchScene(0, selectedOpenAiVoice);
   }
 });
 
@@ -2466,7 +2470,7 @@ async function changeTtsProvider(provider) {
     ttsStatus.className = "tts-status openai";
     previewSelectedOpenAiVoice(selectedOpenAiVoice);
     if (shouldWarmFullAudio()) warmAllSceneAudio(selectedOpenAiVoice);
-    else prefetchScene(0, selectedOpenAiVoice);
+    else if (shouldPrefetchAudio()) prefetchScene(0, selectedOpenAiVoice);
   } else {
     ttsStatus.textContent = "Browser voice fallback";
     ttsStatus.className = "tts-status fallback";
@@ -2716,14 +2720,14 @@ async function loadVoiceBackend() {
       console.warn(error);
       setBuildStatus(error.message || "Initial generate failed.", "warn");
       if (useOpenAiTts) {
-        prefetchScene(0, selectedOpenAiVoice);
+        if (shouldPrefetchAudio()) prefetchScene(0, selectedOpenAiVoice);
         if (shouldWarmFullAudio()) warmAllSceneAudio(selectedOpenAiVoice);
       }
     });
     return;
   }
   if (useOpenAiTts) {
-    prefetchScene(0, selectedOpenAiVoice);
+    if (shouldPrefetchAudio()) prefetchScene(0, selectedOpenAiVoice);
     if (shouldWarmFullAudio()) warmAllSceneAudio(selectedOpenAiVoice);
   }
 }

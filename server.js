@@ -17,6 +17,7 @@ const oauthManifestHelper = join(root, "scripts/oauth_manifest.py");
 const realtimeModel = process.env.OPENAI_REALTIME_MODEL || "gpt-realtime-2";
 const realtimeReasoningEffort = process.env.OPENAI_REALTIME_REASONING_EFFORT || "xhigh";
 const manifestHelperTimeoutMs = Math.max(15000, Number(process.env.OPENAI_MANIFEST_TIMEOUT_MS) || 45000);
+const ttsRequestTimeoutMs = Math.max(10000, Number(process.env.TTS_REQUEST_TIMEOUT_MS) || 45000);
 const realtimeVoices = ["marin", "cedar", "alloy", "ash", "ballad", "coral", "echo", "sage", "shimmer", "verse"];
 const openaiApiVoices = [
   "marin",
@@ -414,6 +415,16 @@ function runProcess(command, args, options = {}) {
   });
 }
 
+async function fetchWithAbort(url, options = {}, timeoutMs = ttsRequestTimeoutMs) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function createOAuthRealtimeSpeech({ input, voice, instructions }) {
   const cacheKey = createHash("sha256")
     .update(
@@ -481,7 +492,7 @@ async function createGeminiSpeech({ input, voice, instructions }) {
   await mkdir(cacheDir, { recursive: true });
   if (existsSync(wavPath)) return readFile(wavPath);
 
-  const response = await fetch(geminiTtsEndpoint, {
+  const response = await fetchWithAbort(geminiTtsEndpoint, {
     method: "POST",
     headers: {
       "content-type": "application/json; charset=utf-8",
@@ -566,7 +577,7 @@ async function createGoogleCloudSpeech({ input, voice }) {
   await mkdir(cacheDir, { recursive: true });
   if (existsSync(audioPath)) return readFile(audioPath);
 
-  const response = await fetch(googleTtsRequestUrl(), {
+  const response = await fetchWithAbort(googleTtsRequestUrl(), {
     method: "POST",
     headers: await googleTtsHeaders(),
     body: JSON.stringify({
@@ -1035,17 +1046,18 @@ function normalizeScene(raw, index, sceneCount, topic, options = {}) {
   const title = clipText(raw?.title, index === 0 ? `${topic} 한 번에 보기` : `${topic} 핵심 ${index + 1}`, 72);
   const markCandidate = clipText(raw?.mark, title.split(/\s+/)[0] || topic.slice(0, 8), 24);
   const mark = title.includes(markCandidate) ? markCandidate : title.split(/\s+/)[0] || markCandidate;
+  const speech = clipText(
+    raw?.speech,
+    `${topic}에서 이 장면은 ${title}를 설명합니다. 화면의 핵심 문장과 음성이 같은 내용을 가리키도록 구성해서, 다음 장면으로 자연스럽게 이어지게 합니다.`,
+    520,
+  );
   const scene = {
-    duration: 10,
+    duration: Math.max(10, Math.min(24, Math.max(Number(raw?.duration) || 0, estimateSceneSeconds(speech)))),
     layout,
     title,
     mark,
     caption: cleanCaption(raw?.caption, `${title}.`) || `${title}.`,
-    speech: clipText(
-      raw?.speech,
-      `${topic}에서 이 장면은 ${title}를 설명합니다. 화면의 핵심 문장과 음성이 같은 내용을 가리키도록 구성해서, 다음 장면으로 자연스럽게 이어지게 합니다.`,
-      520,
-    ),
+    speech,
   };
   scene.delivery = normalizeDelivery(raw?.delivery, layout, index, sceneCount, options.style);
 
@@ -1389,6 +1401,22 @@ function shortTopicLabel(topic) {
   return clipText(candidate, "이 주제", 42);
 }
 
+function hasFinalConsonant(value) {
+  const chars = [...stripHtml(value)].reverse();
+  const hangul = chars.find((char) => /[가-힣]/.test(char));
+  if (!hangul) return false;
+  return (hangul.charCodeAt(0) - 0xac00) % 28 !== 0;
+}
+
+function josa(value, consonantForm, vowelForm) {
+  return hasFinalConsonant(value) ? consonantForm : vowelForm;
+}
+
+function estimateSceneSeconds(speech) {
+  const length = stripHtml(speech).length;
+  return Math.max(10, Math.min(20, Math.round(length / 6)));
+}
+
 function fallbackSpeech(topicLabel, title, source, index, hasSources) {
   const angles = [
     "사용자가 실제로 느낄 변화",
@@ -1399,17 +1427,13 @@ function fallbackSpeech(topicLabel, title, source, index, hasSources) {
   ];
   const angle = angles[index % angles.length];
   if (/결론|정리/.test(title)) {
-    return `정리하면 ${topicLabel}은 단순 기능 추가가 아니라 플랫폼 방향 변화입니다. 마지막 판단은 출처와 출시 범위를 기준으로 둡니다.`;
+    return `정리하면 ${topicLabel}${josa(topicLabel, "은", "는")} 단순 기능 추가보다 방향 변화에 가깝습니다. 판단 기준은 출처, 적용 범위, 실제 사용자 경험입니다.`;
   }
   if (source) {
-    const snippet = clipText(source.snippet, "", 86);
-    if (snippet) {
-      return `${title} 장면은 ${source.host}의 확인된 내용에서 출발합니다. ${snippet} 이 근거를 화면의 한 문장과 연결해 다음 질문으로 넘깁니다.`;
-    }
-    return `이 장면에서는 ${topicLabel}을 ${angle} 관점에서 봅니다. ${source.host} 기준으로 확인된 변화와 해석을 분리합니다.`;
+    return `${title}${josa(title, "은", "는")} ${source.host} 기준으로 확인합니다. 사실은 짧게 고정하고, 해석은 다음 장면에서 따로 분리합니다.`;
   }
   const sourceLine = hasSources ? "확인된 출처와 맞지 않는 추측은 빼고," : "최신 사실처럼 보이는 단정은 피하고,";
-  return `이 장면에서는 ${topicLabel}을 ${angle} 관점에서 봅니다. ${sourceLine} 한 가지 질문만 다음 장면으로 넘깁니다.`;
+  return `${topicLabel}${josa(topicLabel, "을", "를")} ${angle} 관점에서 봅니다. ${sourceLine} 한 가지 질문만 남기고 바로 다음 장면으로 넘깁니다.`;
 }
 
 function fallbackManifest(topic, sceneCount = 30, style = "explainer", research = { required: false, sources: [] }) {

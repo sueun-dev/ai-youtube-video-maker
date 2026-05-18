@@ -10,3 +10,4 @@ scripts/__pycache__/
 *.mp4
 *.mov
 *.wav.tmp
+tts-emotion-tests/
