@@ -1133,6 +1133,7 @@ const ttsStatus = document.querySelector("#ttsStatus");
 const params = new URLSearchParams(window.location.search);
 const BEST_OPENAI_VOICE = "cedar";
 const BACKUP_OPENAI_VOICE = "marin";
+const BEST_GEMINI_TTS_VOICE = "Charon";
 const BEST_GOOGLE_TTS_VOICE = "ko-KR-Chirp3-HD-Charon";
 const BEST_MACOS_TTS_VOICE = "Yuna";
 const VOICE_PREVIEW_TEXT =
@@ -1162,11 +1163,13 @@ let voices = [];
 let ttsProviders = [];
 let providerVoices = {
   openai: [],
+  gemini: [],
   google: [],
   macos: [],
 };
 let providerBestVoices = {
   openai: BEST_OPENAI_VOICE,
+  gemini: BEST_GEMINI_TTS_VOICE,
   google: BEST_GOOGLE_TTS_VOICE,
   macos: BEST_MACOS_TTS_VOICE,
 };
@@ -1369,7 +1372,7 @@ function renderScriptList() {
 
 function normalizeTtsProvider(value) {
   const provider = String(value || "openai").toLowerCase();
-  return ["openai", "google", "macos", "browser"].includes(provider) ? provider : "openai";
+  return ["openai", "gemini", "google", "macos", "browser"].includes(provider) ? provider : "openai";
 }
 
 function currentTtsProvider() {
@@ -1379,6 +1382,7 @@ function currentTtsProvider() {
 function currentTtsProviderLabel() {
   const provider = currentTtsProvider();
   if (provider?.label) return provider.label;
+  if (selectedTtsProvider === "gemini") return "Gemini 3.1 Flash TTS";
   if (selectedTtsProvider === "google") return "Google Cloud TTS";
   if (selectedTtsProvider === "macos") return "macOS Korean TTS";
   if (selectedTtsProvider === "browser") return "Browser system TTS";
@@ -1393,6 +1397,10 @@ function currentBestVoice() {
   const voicesForProvider = currentProviderVoices();
   const best = currentTtsProvider()?.bestVoice || providerBestVoices[selectedTtsProvider];
   return voicesForProvider.includes(best) ? best : voicesForProvider[0] || best || BEST_OPENAI_VOICE;
+}
+
+function shouldWarmFullAudio() {
+  return ["openai", "macos"].includes(selectedTtsProvider);
 }
 
 function clearAudioCaches() {
@@ -1415,6 +1423,7 @@ function renderTtsProviderSelects() {
     ? ttsProviders
     : [
         { id: "openai", label: "OpenAI TTS", available: useOpenAiTts },
+        { id: "gemini", label: "Gemini 3.1 Flash TTS", available: false },
         { id: "macos", label: "macOS Korean TTS", available: false },
         { id: "browser", label: "Browser system TTS", available: true },
       ];
@@ -1457,7 +1466,14 @@ function renderOpenAiVoiceOptions(selectEl) {
   if (!selectEl) return;
   const voicesForProvider = currentProviderVoices();
   const bestVoice = currentBestVoice();
-  const providerLabel = selectedTtsProvider === "google" ? "Google" : selectedTtsProvider === "macos" ? "macOS" : "GPT";
+  const providerLabel =
+    selectedTtsProvider === "gemini"
+      ? "Gemini"
+      : selectedTtsProvider === "google"
+        ? "Google"
+        : selectedTtsProvider === "macos"
+          ? "macOS"
+          : "GPT";
   selectEl.disabled = !voicesForProvider.length;
   if (!voicesForProvider.length) {
     selectEl.innerHTML = '<option value="">No server voices available</option>';
@@ -1613,7 +1629,8 @@ function applyManifest(manifest, voice = selectedOpenAiVoice) {
   if (useOpenAiTts) {
     ttsStatus.textContent = `Preparing ${selectedOpenAiVoice} via ${currentTtsProviderLabel()}`;
     ttsStatus.className = "tts-status openai";
-    warmAllSceneAudio(selectedOpenAiVoice);
+    if (shouldWarmFullAudio()) warmAllSceneAudio(selectedOpenAiVoice);
+    else prefetchScene(0, selectedOpenAiVoice);
   }
 }
 
@@ -2418,7 +2435,8 @@ voiceSelect.addEventListener("change", async () => {
   if (isPlaying) await speakActiveScene();
   else if (useOpenAiTts) {
     previewSelectedOpenAiVoice(selectedOpenAiVoice);
-    warmAllSceneAudio(selectedOpenAiVoice);
+    if (shouldWarmFullAudio()) warmAllSceneAudio(selectedOpenAiVoice);
+    else prefetchScene(0, selectedOpenAiVoice);
   }
 });
 
@@ -2447,7 +2465,8 @@ async function changeTtsProvider(provider) {
     ttsStatus.textContent = `Selected ${currentTtsProviderLabel()}`;
     ttsStatus.className = "tts-status openai";
     previewSelectedOpenAiVoice(selectedOpenAiVoice);
-    warmAllSceneAudio(selectedOpenAiVoice);
+    if (shouldWarmFullAudio()) warmAllSceneAudio(selectedOpenAiVoice);
+    else prefetchScene(0, selectedOpenAiVoice);
   } else {
     ttsStatus.textContent = "Browser voice fallback";
     ttsStatus.className = "tts-status fallback";
@@ -2639,14 +2658,19 @@ async function loadVoiceBackend() {
         acc[provider.id] = provider.voices;
         return acc;
       },
-      { openai: [], google: [], macos: [] },
+      { openai: [], gemini: [], google: [], macos: [] },
     );
     providerBestVoices = ttsProviders.reduce(
       (acc, provider) => {
         if (provider.bestVoice) acc[provider.id] = provider.bestVoice;
         return acc;
       },
-      { openai: BEST_OPENAI_VOICE, google: BEST_GOOGLE_TTS_VOICE, macos: BEST_MACOS_TTS_VOICE },
+      {
+        openai: BEST_OPENAI_VOICE,
+        gemini: BEST_GEMINI_TTS_VOICE,
+        google: BEST_GOOGLE_TTS_VOICE,
+        macos: BEST_MACOS_TTS_VOICE,
+      },
     );
     const requestedProvider = normalizeTtsProvider(params.get("tts") || selectedTtsProvider);
     const requestedAvailable = ttsProviders.some(
@@ -2655,6 +2679,7 @@ async function loadVoiceBackend() {
     selectedTtsProvider = requestedAvailable
       ? requestedProvider
       : ttsProviders.find((provider) => provider.id === "openai" && provider.available)?.id ||
+        ttsProviders.find((provider) => provider.id === "gemini" && provider.available)?.id ||
         ttsProviders.find((provider) => provider.id === "google" && provider.available)?.id ||
         ttsProviders.find((provider) => provider.id === "macos" && provider.available)?.id ||
         "browser";
@@ -2692,14 +2717,14 @@ async function loadVoiceBackend() {
       setBuildStatus(error.message || "Initial generate failed.", "warn");
       if (useOpenAiTts) {
         prefetchScene(0, selectedOpenAiVoice);
-        warmAllSceneAudio(selectedOpenAiVoice);
+        if (shouldWarmFullAudio()) warmAllSceneAudio(selectedOpenAiVoice);
       }
     });
     return;
   }
   if (useOpenAiTts) {
     prefetchScene(0, selectedOpenAiVoice);
-    warmAllSceneAudio(selectedOpenAiVoice);
+    if (shouldWarmFullAudio()) warmAllSceneAudio(selectedOpenAiVoice);
   }
 }
 

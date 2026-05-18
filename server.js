@@ -38,6 +38,44 @@ const googleTtsApiKey = process.env.GOOGLE_TTS_API_KEY || process.env.GOOGLE_CLO
 const googleTtsAccessToken = process.env.GOOGLE_TTS_ACCESS_TOKEN || process.env.GOOGLE_CLOUD_ACCESS_TOKEN || "";
 const googleTtsProject = process.env.GOOGLE_TTS_PROJECT_ID || process.env.GOOGLE_CLOUD_PROJECT || "";
 const googleTtsUseGcloud = process.env.GOOGLE_TTS_USE_GCLOUD === "1";
+const geminiTtsApiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_GEMINI_API_KEY || "";
+const geminiTtsModel = process.env.GEMINI_TTS_MODEL || "gemini-3.1-flash-tts-preview";
+const geminiTtsEndpoint =
+  process.env.GEMINI_TTS_ENDPOINT ||
+  `https://generativelanguage.googleapis.com/v1beta/models/${geminiTtsModel}:generateContent`;
+const geminiTtsDefaultVoice = process.env.GEMINI_TTS_VOICE || "Charon";
+const geminiTtsVoices = [
+  "Zephyr",
+  "Puck",
+  "Charon",
+  "Kore",
+  "Fenrir",
+  "Leda",
+  "Orus",
+  "Aoede",
+  "Callirrhoe",
+  "Autonoe",
+  "Enceladus",
+  "Iapetus",
+  "Umbriel",
+  "Algieba",
+  "Despina",
+  "Erinome",
+  "Algenib",
+  "Rasalgethi",
+  "Laomedeia",
+  "Achernar",
+  "Alnilam",
+  "Schedar",
+  "Gacrux",
+  "Pulcherrima",
+  "Achird",
+  "Zubenelgenubi",
+  "Vindemiatrix",
+  "Sadachbia",
+  "Sadaltager",
+  "Sulafat",
+];
 const googleTtsDefaultVoice = process.env.GOOGLE_TTS_VOICE || "ko-KR-Chirp3-HD-Charon";
 const googleTtsSpeakingRate = Number(process.env.GOOGLE_TTS_SPEAKING_RATE || 0.94);
 const googleTtsPitch = Number(process.env.GOOGLE_TTS_PITCH || -1);
@@ -72,6 +110,10 @@ function hasOAuthRealtime() {
 
 function hasGoogleTts() {
   return Boolean(googleTtsApiKey || googleTtsAccessToken || googleTtsUseGcloud);
+}
+
+function hasGeminiTts() {
+  return Boolean(geminiTtsApiKey);
 }
 
 function hasMacosTts() {
@@ -135,10 +177,11 @@ async function createSpeech(req, res) {
   }
 
   const input = String(body.input || "").trim();
-  const provider = ["google", "macos"].includes(String(body.provider || "").toLowerCase())
+  const provider = ["gemini", "google", "macos"].includes(String(body.provider || "").toLowerCase())
     ? String(body.provider).toLowerCase()
     : "openai";
   const openaiVoice = [...realtimeVoices, ...openaiApiVoices].includes(body.voice) ? body.voice : "cedar";
+  const geminiVoice = geminiTtsVoices.includes(body.voice) ? body.voice : geminiTtsDefaultVoice;
   const googleVoice = googleTtsVoices.includes(body.voice) ? body.voice : googleTtsDefaultVoice;
   const macosVoices = await listMacosKoreanVoices();
   const macosVoice = macosVoices.includes(body.voice) ? body.voice : macosTtsDefaultVoice;
@@ -154,6 +197,38 @@ async function createSpeech(req, res) {
   if (input.length > 2400) {
     json(res, 400, { error: "Input is too long for this local demo." });
     return;
+  }
+
+  if (provider === "gemini") {
+    if (!hasGeminiTts()) {
+      json(res, 501, {
+        error: "Gemini TTS is not configured.",
+        detail: "Set GEMINI_API_KEY from Google AI Studio.",
+      });
+      return;
+    }
+
+    const started = Date.now();
+    try {
+      const wav = await createGeminiSpeech({ input, voice: geminiVoice, instructions });
+      res.writeHead(200, {
+        "content-type": "audio/wav",
+        "content-length": wav.length,
+        "cache-control": "no-store",
+        "x-tts-route": "gemini-tts",
+        "x-tts-model": geminiTtsModel,
+        "x-tts-voice": geminiVoice,
+        "x-tts-ms": String(Date.now() - started),
+      });
+      res.end(wav);
+      return;
+    } catch (error) {
+      json(res, 502, {
+        error: "Gemini TTS request failed.",
+        detail: String(error.message || error).slice(0, 800),
+      });
+      return;
+    }
   }
 
   if (provider === "google") {
@@ -369,6 +444,84 @@ async function createOAuthRealtimeSpeech({ input, voice, instructions }) {
   });
   const pcm = await readFile(pcmPath);
   const wav = pcm16ToWav(pcm);
+  await writeFile(wavPath, wav);
+  return wav;
+}
+
+function geminiTtsPrompt(input, instructions) {
+  return [
+    "Synthesize speech as audio only.",
+    "Language: Korean.",
+    "Do not read section labels, markdown labels, or these production directions aloud.",
+    "Use a calm, articulate Korean documentary narrator voice with precise pronunciation.",
+    "Keep a steady medium pace, short natural pauses, restrained emotion, and clear consonants.",
+    instructions,
+    "### TRANSCRIPT TO READ EXACTLY",
+    input,
+  ].join("\n");
+}
+
+async function createGeminiSpeech({ input, voice, instructions }) {
+  const normalizedVoice = geminiTtsVoices.includes(voice) ? voice : geminiTtsDefaultVoice;
+  const prompt = geminiTtsPrompt(input, instructions);
+  const cacheKey = createHash("sha256")
+    .update(
+      JSON.stringify({
+        provider: "gemini-tts",
+        endpoint: geminiTtsEndpoint,
+        model: geminiTtsModel,
+        input,
+        instructions,
+        voice: normalizedVoice,
+      }),
+    )
+    .digest("hex");
+  const cacheDir = join(root, ".cache/tts");
+  const wavPath = join(cacheDir, `${cacheKey}.gemini.wav`);
+  await mkdir(cacheDir, { recursive: true });
+  if (existsSync(wavPath)) return readFile(wavPath);
+
+  const response = await fetch(geminiTtsEndpoint, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json; charset=utf-8",
+      "x-goog-api-key": geminiTtsApiKey,
+    },
+    body: JSON.stringify({
+      contents: [
+        {
+          parts: [{ text: prompt }],
+        },
+      ],
+      generationConfig: {
+        responseModalities: ["AUDIO"],
+        speechConfig: {
+          voiceConfig: {
+            prebuiltVoiceConfig: {
+              voiceName: normalizedVoice,
+            },
+          },
+        },
+      },
+      model: geminiTtsModel,
+    }),
+  });
+
+  const rawPayload = await response.text();
+  let payload;
+  try {
+    payload = rawPayload ? JSON.parse(rawPayload) : {};
+  } catch {
+    payload = { error: { message: rawPayload } };
+  }
+  const audioContent = payload.candidates?.[0]?.content?.parts?.find((part) => part.inlineData)?.inlineData?.data;
+  if (!response.ok || !audioContent) {
+    const reason = payload.promptFeedback?.blockReason ? `Blocked: ${payload.promptFeedback.blockReason}. ` : "";
+    throw new Error(reason + (payload.error?.message || `Gemini TTS HTTP ${response.status}`));
+  }
+
+  const pcm = Buffer.from(audioContent, "base64");
+  const wav = pcm16ToWav(pcm, 24000, 1);
   await writeFile(wavPath, wav);
   return wav;
 }
@@ -1587,6 +1740,7 @@ const server = createServer(async (req, res) => {
     const macosVoices = await listMacosKoreanVoices();
     json(res, 200, {
       openaiTts: openaiAvailable,
+      geminiTts: hasGeminiTts(),
       googleTts: hasGoogleTts(),
       macosTts: hasMacosTts(),
       provider: openaiProvider,
@@ -1606,6 +1760,17 @@ const server = createServer(async (req, res) => {
           bestVoice: "cedar",
           recommendedVoices: ["cedar", "marin"],
           voices: openaiVoices,
+        },
+        {
+          id: "gemini",
+          label: "Gemini 3.1 Flash TTS",
+          available: hasGeminiTts(),
+          provider: geminiTtsApiKey ? "gemini-api-key" : "not-configured",
+          model: geminiTtsModel,
+          bestVoice: geminiTtsDefaultVoice,
+          recommendedVoices: [geminiTtsDefaultVoice, "Kore", "Schedar", "Sadaltager"],
+          voices: geminiTtsVoices,
+          languageCode: "ko",
         },
         {
           id: "google",

@@ -29,7 +29,7 @@ Most simple AI video workflows produce a script first and then force visuals aro
 - 36-scene long-form planning model
 - Scene-level documentary delivery directions for tone, pace, pauses, tension, and conclusion weight
 - TTS narration with voice-specific full versions
-- Switchable TTS providers: OpenAI Realtime, Google Cloud TTS, local macOS Korean voices, or browser fallback
+- Switchable TTS providers: OpenAI Realtime, Gemini 3.1 Flash TTS, Google Cloud TTS, local macOS Korean voices, or browser fallback
 - Audio-first timeline sync
 - OpenAI Realtime voice support through a local OAuth bridge
 - OpenAI API key fallback for TTS
@@ -67,6 +67,9 @@ OPENAI_API_KEY=
 OPENAI_OAUTH_ROOT=/absolute/path/to/openao-oauth-access
 OPENAI_REALTIME_MODEL=gpt-realtime-2
 OPENAI_REALTIME_REASONING_EFFORT=xhigh
+GEMINI_API_KEY=
+GEMINI_TTS_MODEL=gemini-3.1-flash-tts-preview
+GEMINI_TTS_VOICE=Charon
 GOOGLE_TTS_API_KEY=
 GOOGLE_TTS_ACCESS_TOKEN=
 GOOGLE_TTS_USE_GCLOUD=0
@@ -77,6 +80,8 @@ MACOS_TTS_RATE=170
 ```
 
 The local Codex OAuth bridge enables GPT-5.5 manifest generation and OpenAI Realtime TTS without placing an OpenAI API key in this project. If the OAuth bridge is not available, the app can still run with local fallback manifests and the API-key TTS route when `OPENAI_API_KEY` is set.
+
+Gemini TTS uses the Google AI Studio key and the `gemini-3.1-flash-tts-preview` model. Use `tts=gemini` in the URL to test it. The server receives Gemini PCM audio, wraps it as a 24 kHz WAV file, and feeds it into the same audio-first timeline sync.
 
 Google Cloud TTS is optional and is mainly useful for Korean pronunciation checks. Use `tts=google` in the URL after configuring one Google auth path. The app sends the same scene script to Google, decodes the returned MP3, and keeps the same audio-first scene sync.
 
