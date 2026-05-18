@@ -140,6 +140,7 @@ select {
 }
 
 .topic-control textarea:focus,
+.builder-provider:focus-within,
 .builder-voice:focus-within,
 .builder-style:focus-within {
   border-color: rgba(143, 183, 255, 0.55);
@@ -1279,11 +1280,13 @@ select {
   text-overflow: ellipsis;
 }
 
+.builder-provider,
 .builder-voice,
 .builder-style {
   width: 100%;
 }
 
+.builder-provider select,
 .builder-voice select,
 .builder-style select {
   width: 100%;

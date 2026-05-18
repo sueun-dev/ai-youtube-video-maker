@@ -33,9 +33,49 @@ const openaiApiVoices = [
   "fable",
   "onyx",
 ];
+const googleTtsEndpoint = process.env.GOOGLE_TTS_ENDPOINT || "https://texttospeech.googleapis.com/v1/text:synthesize";
+const googleTtsApiKey = process.env.GOOGLE_TTS_API_KEY || process.env.GOOGLE_CLOUD_TTS_API_KEY || "";
+const googleTtsAccessToken = process.env.GOOGLE_TTS_ACCESS_TOKEN || process.env.GOOGLE_CLOUD_ACCESS_TOKEN || "";
+const googleTtsProject = process.env.GOOGLE_TTS_PROJECT_ID || process.env.GOOGLE_CLOUD_PROJECT || "";
+const googleTtsUseGcloud = process.env.GOOGLE_TTS_USE_GCLOUD === "1";
+const googleTtsDefaultVoice = process.env.GOOGLE_TTS_VOICE || "ko-KR-Chirp3-HD-Charon";
+const googleTtsSpeakingRate = Number(process.env.GOOGLE_TTS_SPEAKING_RATE || 0.94);
+const googleTtsPitch = Number(process.env.GOOGLE_TTS_PITCH || -1);
+const googleTtsVoices = [
+  "ko-KR-Chirp3-HD-Charon",
+  "ko-KR-Chirp3-HD-Achird",
+  "ko-KR-Chirp3-HD-Algenib",
+  "ko-KR-Chirp3-HD-Puck",
+  "ko-KR-Chirp3-HD-Aoede",
+  "ko-KR-Chirp3-HD-Kore",
+  "ko-KR-Neural2-A",
+  "ko-KR-Neural2-B",
+  "ko-KR-Neural2-C",
+  "ko-KR-Wavenet-A",
+  "ko-KR-Wavenet-B",
+  "ko-KR-Wavenet-C",
+  "ko-KR-Wavenet-D",
+  "ko-KR-Standard-A",
+  "ko-KR-Standard-B",
+  "ko-KR-Standard-C",
+  "ko-KR-Standard-D",
+];
+const macosSayPath = process.env.MACOS_SAY_PATH || "/usr/bin/say";
+const macosAfconvertPath = process.env.MACOS_AFCONVERT_PATH || "/usr/bin/afconvert";
+const macosTtsDefaultVoice = process.env.MACOS_TTS_VOICE || "Yuna";
+const macosTtsRate = String(Number(process.env.MACOS_TTS_RATE || 170) || 170);
+let cachedMacosVoices = null;
 
 function hasOAuthRealtime() {
   return existsSync(oauthPython) && existsSync(oauthHelper);
+}
+
+function hasGoogleTts() {
+  return Boolean(googleTtsApiKey || googleTtsAccessToken || googleTtsUseGcloud);
+}
+
+function hasMacosTts() {
+  return existsSync(macosSayPath) && existsSync(macosAfconvertPath);
 }
 
 function loadDotEnv() {
@@ -95,7 +135,13 @@ async function createSpeech(req, res) {
   }
 
   const input = String(body.input || "").trim();
-  const voice = [...realtimeVoices, ...openaiApiVoices].includes(body.voice) ? body.voice : "cedar";
+  const provider = ["google", "macos"].includes(String(body.provider || "").toLowerCase())
+    ? String(body.provider).toLowerCase()
+    : "openai";
+  const openaiVoice = [...realtimeVoices, ...openaiApiVoices].includes(body.voice) ? body.voice : "cedar";
+  const googleVoice = googleTtsVoices.includes(body.voice) ? body.voice : googleTtsDefaultVoice;
+  const macosVoices = await listMacosKoreanVoices();
+  const macosVoice = macosVoices.includes(body.voice) ? body.voice : macosTtsDefaultVoice;
   const instructions =
     typeof body.instructions === "string" && body.instructions.trim()
       ? body.instructions.trim()
@@ -110,6 +156,72 @@ async function createSpeech(req, res) {
     return;
   }
 
+  if (provider === "google") {
+    if (!hasGoogleTts()) {
+      json(res, 501, {
+        error: "Google Cloud TTS is not configured.",
+        detail:
+          "Set GOOGLE_TTS_API_KEY, GOOGLE_TTS_ACCESS_TOKEN, or GOOGLE_TTS_USE_GCLOUD=1 with a working gcloud login.",
+      });
+      return;
+    }
+
+    const started = Date.now();
+    try {
+      const audio = await createGoogleCloudSpeech({ input, voice: googleVoice });
+      res.writeHead(200, {
+        "content-type": "audio/mpeg",
+        "content-length": audio.length,
+        "cache-control": "no-store",
+        "x-tts-route": "google-cloud-tts",
+        "x-tts-model": "google-cloud-text-to-speech-v1",
+        "x-tts-voice": googleVoice,
+        "x-tts-ms": String(Date.now() - started),
+      });
+      res.end(audio);
+      return;
+    } catch (error) {
+      json(res, 502, {
+        error: "Google Cloud TTS request failed.",
+        detail: String(error.message || error).slice(0, 800),
+      });
+      return;
+    }
+  }
+
+  if (provider === "macos") {
+    if (!hasMacosTts()) {
+      json(res, 501, {
+        error: "macOS TTS is not available.",
+        detail: "This provider needs /usr/bin/say and /usr/bin/afconvert on macOS.",
+      });
+      return;
+    }
+
+    const started = Date.now();
+    try {
+      const wav = await createMacosSpeech({ input, voice: macosVoice });
+      res.writeHead(200, {
+        "content-type": "audio/wav",
+        "content-length": wav.length,
+        "cache-control": "no-store",
+        "x-tts-route": "macos-system-voice",
+        "x-tts-model": "say-afconvert",
+        "x-tts-voice": macosVoice,
+        "x-tts-ms": String(Date.now() - started),
+      });
+      res.end(wav);
+      return;
+    } catch (error) {
+      json(res, 502, {
+        error: "macOS TTS request failed.",
+        detail: String(error.message || error).slice(0, 800),
+      });
+      return;
+    }
+  }
+
+  const voice = openaiVoice;
   if (hasOAuthRealtime()) {
     try {
       const wav = await createOAuthRealtimeSpeech({ input, voice, instructions });
@@ -259,6 +371,127 @@ async function createOAuthRealtimeSpeech({ input, voice, instructions }) {
   const wav = pcm16ToWav(pcm);
   await writeFile(wavPath, wav);
   return wav;
+}
+
+async function googleTtsHeaders() {
+  const headers = { "content-type": "application/json; charset=utf-8" };
+  if (googleTtsAccessToken) {
+    headers.authorization = `Bearer ${googleTtsAccessToken}`;
+  } else if (googleTtsUseGcloud) {
+    const { stdout } = await runProcess("gcloud", ["auth", "print-access-token"], { timeoutMs: 12000 });
+    const token = stdout.trim();
+    if (!token) throw new Error("gcloud did not return an access token.");
+    headers.authorization = `Bearer ${token}`;
+  }
+  if (googleTtsProject) headers["x-goog-user-project"] = googleTtsProject;
+  return headers;
+}
+
+function googleTtsRequestUrl() {
+  if (!googleTtsApiKey) return googleTtsEndpoint;
+  const url = new URL(googleTtsEndpoint);
+  url.searchParams.set("key", googleTtsApiKey);
+  return url.href;
+}
+
+async function createGoogleCloudSpeech({ input, voice }) {
+  const normalizedVoice = googleTtsVoices.includes(voice) ? voice : googleTtsDefaultVoice;
+  const cacheKey = createHash("sha256")
+    .update(
+      JSON.stringify({
+        provider: "google-cloud-tts",
+        endpoint: googleTtsEndpoint,
+        input,
+        voice: normalizedVoice,
+        speakingRate: googleTtsSpeakingRate,
+        pitch: googleTtsPitch,
+      }),
+    )
+    .digest("hex");
+  const cacheDir = join(root, ".cache/tts");
+  const audioPath = join(cacheDir, `${cacheKey}.mp3`);
+  await mkdir(cacheDir, { recursive: true });
+  if (existsSync(audioPath)) return readFile(audioPath);
+
+  const response = await fetch(googleTtsRequestUrl(), {
+    method: "POST",
+    headers: await googleTtsHeaders(),
+    body: JSON.stringify({
+      input: { text: input },
+      voice: {
+        languageCode: "ko-KR",
+        name: normalizedVoice,
+      },
+      audioConfig: {
+        audioEncoding: "MP3",
+        speakingRate: Number.isFinite(googleTtsSpeakingRate) ? googleTtsSpeakingRate : 0.94,
+        pitch: Number.isFinite(googleTtsPitch) ? googleTtsPitch : -1,
+      },
+    }),
+  });
+
+  const rawPayload = await response.text();
+  let payload;
+  try {
+    payload = rawPayload ? JSON.parse(rawPayload) : {};
+  } catch {
+    payload = { error: { message: rawPayload } };
+  }
+  if (!response.ok || !payload.audioContent) {
+    throw new Error(payload.error?.message || `Google Cloud TTS HTTP ${response.status}`);
+  }
+
+  const audio = Buffer.from(payload.audioContent, "base64");
+  await writeFile(audioPath, audio);
+  return audio;
+}
+
+async function listMacosKoreanVoices() {
+  if (cachedMacosVoices) return cachedMacosVoices;
+  if (!hasMacosTts()) {
+    cachedMacosVoices = [];
+    return cachedMacosVoices;
+  }
+  try {
+    const { stdout } = await runProcess(macosSayPath, ["-v", "?"], { timeoutMs: 12000 });
+    cachedMacosVoices = stdout
+      .split(/\r?\n/)
+      .filter((line) => /\bko_KR\b/.test(line))
+      .map((line) => line.match(/^(.+?)\s+ko_KR\b/)?.[1]?.trim())
+      .filter(Boolean);
+  } catch {
+    cachedMacosVoices = [macosTtsDefaultVoice];
+  }
+  if (!cachedMacosVoices.includes(macosTtsDefaultVoice)) cachedMacosVoices.unshift(macosTtsDefaultVoice);
+  return cachedMacosVoices;
+}
+
+async function createMacosSpeech({ input, voice }) {
+  const voices = await listMacosKoreanVoices();
+  const normalizedVoice = voices.includes(voice) ? voice : macosTtsDefaultVoice;
+  const cacheKey = createHash("sha256")
+    .update(
+      JSON.stringify({
+        provider: "macos-system-tts",
+        input,
+        voice: normalizedVoice,
+        rate: macosTtsRate,
+      }),
+    )
+    .digest("hex");
+  const cacheDir = join(root, ".cache/tts");
+  const aiffPath = join(cacheDir, `${cacheKey}.aiff`);
+  const wavPath = join(cacheDir, `${cacheKey}.macos.wav`);
+  await mkdir(cacheDir, { recursive: true });
+  if (existsSync(wavPath)) return readFile(wavPath);
+
+  await runProcess(macosSayPath, ["-v", normalizedVoice, "-r", macosTtsRate, "-o", aiffPath, input], {
+    timeoutMs: 120000,
+  });
+  await runProcess(macosAfconvertPath, ["-f", "WAVE", "-d", "LEI16@24000", aiffPath, wavPath], {
+    timeoutMs: 120000,
+  });
+  return readFile(wavPath);
 }
 
 function extractJson(text) {
@@ -1347,14 +1580,71 @@ async function serveStatic(req, res) {
 
 const server = createServer(async (req, res) => {
   if (req.method === "GET" && req.url?.startsWith("/api/status")) {
+    const openaiAvailable = hasOAuthRealtime() || Boolean(process.env.OPENAI_API_KEY);
+    const openaiProvider = hasOAuthRealtime() ? "codex-oauth-realtime" : "openai-api-key";
+    const openaiModel = hasOAuthRealtime() ? realtimeModel : "gpt-4o-mini-tts";
+    const openaiVoices = hasOAuthRealtime() ? realtimeVoices : openaiApiVoices;
+    const macosVoices = await listMacosKoreanVoices();
     json(res, 200, {
-      openaiTts: hasOAuthRealtime() || Boolean(process.env.OPENAI_API_KEY),
-      provider: hasOAuthRealtime() ? "codex-oauth-realtime" : "openai-api-key",
-      model: hasOAuthRealtime() ? realtimeModel : "gpt-4o-mini-tts",
+      openaiTts: openaiAvailable,
+      googleTts: hasGoogleTts(),
+      macosTts: hasMacosTts(),
+      provider: openaiProvider,
+      model: openaiModel,
       reasoningEffort: hasOAuthRealtime() ? realtimeReasoningEffort : null,
       bestVoice: "cedar",
       recommendedVoices: ["cedar", "marin"],
-      voices: hasOAuthRealtime() ? realtimeVoices : openaiApiVoices,
+      voices: openaiVoices,
+      providers: [
+        {
+          id: "openai",
+          label: hasOAuthRealtime() ? "OpenAI Realtime OAuth" : "OpenAI Audio API",
+          available: openaiAvailable,
+          provider: openaiProvider,
+          model: openaiModel,
+          reasoningEffort: hasOAuthRealtime() ? realtimeReasoningEffort : null,
+          bestVoice: "cedar",
+          recommendedVoices: ["cedar", "marin"],
+          voices: openaiVoices,
+        },
+        {
+          id: "google",
+          label: "Google Cloud TTS",
+          available: hasGoogleTts(),
+          provider: googleTtsUseGcloud
+            ? "gcloud-oauth"
+            : googleTtsAccessToken
+              ? "google-oauth-token"
+              : googleTtsApiKey
+                ? "google-api-key"
+                : "not-configured",
+          model: "cloud-text-to-speech-v1",
+          bestVoice: googleTtsDefaultVoice,
+          recommendedVoices: [googleTtsDefaultVoice, "ko-KR-Neural2-C", "ko-KR-Wavenet-C"],
+          voices: googleTtsVoices,
+          languageCode: "ko-KR",
+        },
+        {
+          id: "macos",
+          label: "macOS Korean TTS",
+          available: hasMacosTts(),
+          provider: "local-say-afconvert",
+          model: "macOS say",
+          bestVoice: macosTtsDefaultVoice,
+          recommendedVoices: [macosTtsDefaultVoice, "Eddy (Korean (South Korea))", "Reed (Korean (South Korea))"],
+          voices: macosVoices,
+          languageCode: "ko-KR",
+        },
+        {
+          id: "browser",
+          label: "Browser system TTS",
+          available: true,
+          provider: "web-speech-api",
+          model: "speechSynthesis",
+          bestVoice: "",
+          voices: [],
+        },
+      ],
     });
     return;
   }

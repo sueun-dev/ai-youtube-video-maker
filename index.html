@@ -10,7 +10,7 @@
     />
     <meta
       name="keywords"
-      content="AI YouTube video maker, AI video generator, YouTube video generator, script to video, topic to video, TTS video, HTML video generator, OpenAI TTS, Realtime TTS"
+      content="AI YouTube video maker, AI video generator, YouTube video generator, script to video, topic to video, TTS video, HTML video generator, OpenAI TTS, Google Cloud TTS, macOS TTS, Realtime TTS"
     />
     <meta property="og:title" content="AI YouTube Video Maker" />
     <meta
@@ -41,6 +41,10 @@
                 rows="2"
                 placeholder="관점, 타깃 시청자, 꼭 넣을 내용, 피해야 할 주장이나 톤을 적어두면 생성 프롬프트에 반영됩니다."
               ></textarea>
+            </label>
+            <label class="voice-control builder-provider">
+              <span>TTS</span>
+              <select id="ttsProviderSelect" aria-label="TTS provider selection"></select>
             </label>
             <label class="voice-control builder-voice">
               <span>Voice</span>
@@ -259,6 +263,10 @@
           <button id="restartBtn" type="button">Restart</button>
           <button id="muteBtn" type="button">Voice On</button>
           <button id="cleanBtn" type="button">Clean View</button>
+          <label class="voice-control">
+            <span>TTS</span>
+            <select id="playbackTtsProviderSelect" aria-label="Playback TTS provider selection"></select>
+          </label>
           <label class="voice-control">
             <span>Version</span>
             <select id="voiceSelect" aria-label="Voice selection"></select>

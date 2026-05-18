@@ -1122,6 +1122,8 @@ const briefSources = document.querySelector("#briefSources");
 const downloadBtn = document.querySelector("#downloadBtn");
 const downloadLink = document.querySelector("#downloadLink");
 const downloadStatus = document.querySelector("#downloadStatus");
+const ttsProviderSelect = document.querySelector("#ttsProviderSelect");
+const playbackTtsProviderSelect = document.querySelector("#playbackTtsProviderSelect");
 const voiceSelect = document.querySelector("#voiceSelect");
 const rateInput = document.querySelector("#rateInput");
 const scriptList = document.querySelector("#scriptList");
@@ -1131,6 +1133,8 @@ const ttsStatus = document.querySelector("#ttsStatus");
 const params = new URLSearchParams(window.location.search);
 const BEST_OPENAI_VOICE = "cedar";
 const BACKUP_OPENAI_VOICE = "marin";
+const BEST_GOOGLE_TTS_VOICE = "ko-KR-Chirp3-HD-Charon";
+const BEST_MACOS_TTS_VOICE = "Yuna";
 const VOICE_PREVIEW_TEXT =
   "이 문장은 목소리 비교용 샘플입니다. 같은 원고를 열 개의 목소리로 생성해서, 설명형 HTML 영상에 가장 자연스럽게 맞는 톤을 고릅니다.";
 const VOICE_PREVIEW_INSTRUCTIONS =
@@ -1155,7 +1159,18 @@ let isLoadingSpeech = false;
 let backendLabel = "OpenAI voice ready";
 let sceneAdvanceTimer = 0;
 let voices = [];
-let openAiVoices = [];
+let ttsProviders = [];
+let providerVoices = {
+  openai: [],
+  google: [],
+  macos: [],
+};
+let providerBestVoices = {
+  openai: BEST_OPENAI_VOICE,
+  google: BEST_GOOGLE_TTS_VOICE,
+  macos: BEST_MACOS_TTS_VOICE,
+};
+let selectedTtsProvider = normalizeTtsProvider(params.get("tts") || "openai");
 let selectedOpenAiVoice = BEST_OPENAI_VOICE;
 let warmupToken = 0;
 const audioBufferCache = new Map();
@@ -1352,15 +1367,87 @@ function renderScriptList() {
     .join("");
 }
 
+function normalizeTtsProvider(value) {
+  const provider = String(value || "openai").toLowerCase();
+  return ["openai", "google", "macos", "browser"].includes(provider) ? provider : "openai";
+}
+
+function currentTtsProvider() {
+  return ttsProviders.find((provider) => provider.id === selectedTtsProvider) || null;
+}
+
+function currentTtsProviderLabel() {
+  const provider = currentTtsProvider();
+  if (provider?.label) return provider.label;
+  if (selectedTtsProvider === "google") return "Google Cloud TTS";
+  if (selectedTtsProvider === "macos") return "macOS Korean TTS";
+  if (selectedTtsProvider === "browser") return "Browser system TTS";
+  return "OpenAI TTS";
+}
+
+function currentProviderVoices() {
+  return Array.isArray(providerVoices[selectedTtsProvider]) ? providerVoices[selectedTtsProvider] : [];
+}
+
+function currentBestVoice() {
+  const voicesForProvider = currentProviderVoices();
+  const best = currentTtsProvider()?.bestVoice || providerBestVoices[selectedTtsProvider];
+  return voicesForProvider.includes(best) ? best : voicesForProvider[0] || best || BEST_OPENAI_VOICE;
+}
+
+function clearAudioCaches() {
+  warmupToken += 1;
+  audioBufferCache.clear();
+  audioBufferPromises.clear();
+  previewBufferCache.clear();
+  previewBufferPromises.clear();
+}
+
+function updateVoiceUrl() {
+  const url = new URL(window.location.href);
+  url.searchParams.set("tts", selectedTtsProvider);
+  if (selectedOpenAiVoice) url.searchParams.set("voice", selectedOpenAiVoice);
+  window.history.replaceState(null, "", `${url.pathname}${url.search}`);
+}
+
+function renderTtsProviderSelects() {
+  const providerList = ttsProviders.length
+    ? ttsProviders
+    : [
+        { id: "openai", label: "OpenAI TTS", available: useOpenAiTts },
+        { id: "macos", label: "macOS Korean TTS", available: false },
+        { id: "browser", label: "Browser system TTS", available: true },
+      ];
+  const html = providerList
+    .map((provider) => {
+      const disabled = provider.available ? "" : " disabled";
+      const suffix = provider.available ? "" : " (not configured)";
+      return `<option value="${escapeHtml(provider.id)}"${disabled}>${escapeHtml(provider.label || provider.id)}${suffix}</option>`;
+    })
+    .join("");
+  [ttsProviderSelect, playbackTtsProviderSelect].forEach((selectEl) => {
+    if (!selectEl) return;
+    selectEl.innerHTML = html;
+    selectEl.value = selectedTtsProvider;
+  });
+}
+
 function renderVersionLinks() {
-  if (!versionLinks || !openAiVoices.length) return;
-  versionLinks.innerHTML = openAiVoices
+  const voicesForProvider = currentProviderVoices();
+  if (!versionLinks) return;
+  if (!voicesForProvider.length) {
+    versionLinks.innerHTML = "";
+    return;
+  }
+  const bestVoice = currentBestVoice();
+  versionLinks.innerHTML = voicesForProvider
     .map((voice) => {
       const url = new URL(window.location.href);
+      url.searchParams.set("tts", selectedTtsProvider);
       url.searchParams.set("voice", voice);
       url.searchParams.delete("clean");
       const active = voice === selectedOpenAiVoice ? "active" : "";
-      const label = voice === BEST_OPENAI_VOICE ? `${voice} best` : voice;
+      const label = voice === bestVoice ? `${voice} best` : voice;
       return `<a class="${active}" href="${url.pathname}${url.search}">${escapeHtml(label)}</a>`;
     })
     .join("");
@@ -1368,9 +1455,17 @@ function renderVersionLinks() {
 
 function renderOpenAiVoiceOptions(selectEl) {
   if (!selectEl) return;
-  selectEl.innerHTML = openAiVoices
+  const voicesForProvider = currentProviderVoices();
+  const bestVoice = currentBestVoice();
+  const providerLabel = selectedTtsProvider === "google" ? "Google" : selectedTtsProvider === "macos" ? "macOS" : "GPT";
+  selectEl.disabled = !voicesForProvider.length;
+  if (!voicesForProvider.length) {
+    selectEl.innerHTML = '<option value="">No server voices available</option>';
+    return;
+  }
+  selectEl.innerHTML = voicesForProvider
     .map((voice) => {
-      const label = voice === BEST_OPENAI_VOICE ? `${voice} full version (GPT best)` : `${voice} full version`;
+      const label = voice === bestVoice ? `${voice} full version (${providerLabel} best)` : `${voice} full version`;
       return `<option value="${voice}">${label}</option>`;
     })
     .join("");
@@ -1506,19 +1601,17 @@ function applyManifest(manifest, voice = selectedOpenAiVoice) {
   sceneEls = [...document.querySelectorAll(".scene")];
   if (scriptTitle) scriptTitle.textContent = currentManifest.title;
 
-  if (useOpenAiTts && openAiVoices.includes(voice)) {
+  if (useOpenAiTts && currentProviderVoices().includes(voice)) {
     selectedOpenAiVoice = voice;
     voiceSelect.value = voice;
     syncBuilderVoice();
-    const url = new URL(window.location.href);
-    url.searchParams.set("voice", selectedOpenAiVoice);
-    window.history.replaceState(null, "", `${url.pathname}${url.search}`);
+    updateVoiceUrl();
   }
   renderScriptList();
   renderVersionLinks();
   updateView({ suppressSpeech: true });
   if (useOpenAiTts) {
-    ttsStatus.textContent = `Preparing ${selectedOpenAiVoice} voice manifest`;
+    ttsStatus.textContent = `Preparing ${selectedOpenAiVoice} via ${currentTtsProviderLabel()}`;
     ttsStatus.className = "tts-status openai";
     warmAllSceneAudio(selectedOpenAiVoice);
   }
@@ -1552,7 +1645,7 @@ function updateView(options = {}) {
 }
 
 function selectedVoice() {
-  if (useOpenAiTts) return selectedOpenAiVoice || voiceSelect.value || BEST_OPENAI_VOICE;
+  if (useOpenAiTts) return selectedOpenAiVoice || voiceSelect.value || currentBestVoice();
   const selectedName = voiceSelect.value;
   return (
     voices.find((voice) => voice.name === selectedName) ||
@@ -1599,10 +1692,11 @@ function stopSpeech() {
 }
 
 async function fetchOpenAiAudioBuffer(scene, options = {}) {
+  const provider = selectedTtsProvider;
   const voice = options.voice || selectedVoice();
   const sceneIndex = scenes.indexOf(scene);
   const instructions = buildSceneVoiceInstructions(scene, sceneIndex);
-  const cacheKey = JSON.stringify({ text: scene.speech, voice, instructions });
+  const cacheKey = JSON.stringify({ provider, text: scene.speech, voice, instructions });
   if (audioBufferCache.has(cacheKey)) {
     const cached = audioBufferCache.get(cacheKey);
     if (voice === selectedVoice()) updateSceneDuration(sceneIndex, cached.duration);
@@ -1616,13 +1710,14 @@ async function fetchOpenAiAudioBuffer(scene, options = {}) {
 
   const loadPromise = (async () => {
     if (!options.background) {
-      ttsStatus.textContent = "Generating OAuth voice";
+      ttsStatus.textContent = `Generating ${currentTtsProviderLabel()} voice`;
       ttsStatus.className = "tts-status openai";
     }
     const response = await fetch("/api/tts", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
+        provider,
         input: scene.speech,
         voice,
         instructions,
@@ -1631,7 +1726,7 @@ async function fetchOpenAiAudioBuffer(scene, options = {}) {
 
     if (!response.ok) {
       const detail = await response.json().catch(() => ({}));
-      throw new Error(detail.error || "OpenAI TTS failed.");
+      throw new Error(detail.error || "TTS failed.");
     }
 
     const arrayBuffer = await response.arrayBuffer();
@@ -1670,7 +1765,7 @@ async function warmAllSceneAudio(voice = selectedVoice()) {
     }
   }
   if (!isPlaying && token === warmupToken && voice === selectedVoice()) {
-    ttsStatus.textContent = `Voice manifest synced (${voice}): ${formatTime(totalDuration)}`;
+    ttsStatus.textContent = `Voice synced (${currentTtsProviderLabel()} ${voice}): ${formatTime(totalDuration)}`;
     ttsStatus.className = "tts-status openai";
   }
 }
@@ -1708,14 +1803,15 @@ async function speakWithOpenAi(scene) {
     }, 250);
   };
   source.start();
-  ttsStatus.textContent = `Playing ${voice} via OAuth`;
+  ttsStatus.textContent = `Playing ${voice} via ${currentTtsProviderLabel()}`;
   ttsStatus.className = "tts-status openai";
   prefetchScene(activeSceneIndex + 1, voice);
   return true;
 }
 
 async function fetchOpenAiPreviewBuffer(voice) {
-  const cacheKey = JSON.stringify({ text: VOICE_PREVIEW_TEXT, voice, preview: true });
+  const provider = selectedTtsProvider;
+  const cacheKey = JSON.stringify({ provider, text: VOICE_PREVIEW_TEXT, voice, preview: true });
   if (previewBufferCache.has(cacheKey)) return previewBufferCache.get(cacheKey);
   if (previewBufferPromises.has(cacheKey)) return previewBufferPromises.get(cacheKey);
 
@@ -1724,6 +1820,7 @@ async function fetchOpenAiPreviewBuffer(voice) {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
+        provider,
         input: VOICE_PREVIEW_TEXT,
         voice,
         instructions: VOICE_PREVIEW_INSTRUCTIONS,
@@ -1731,7 +1828,7 @@ async function fetchOpenAiPreviewBuffer(voice) {
     });
     if (!response.ok) {
       const detail = await response.json().catch(() => ({}));
-      throw new Error(detail.error || "OpenAI preview failed.");
+      throw new Error(detail.error || "TTS preview failed.");
     }
     const arrayBuffer = await response.arrayBuffer();
     const context = await ensureAudioContext();
@@ -1791,9 +1888,13 @@ async function speakActiveScene() {
       lastFrameTime = 0;
       return started;
     } catch (error) {
+      const failedProvider = currentTtsProviderLabel();
       isLoadingSpeech = false;
       useOpenAiTts = false;
-      ttsStatus.textContent = `OpenAI failed, browser fallback`;
+      selectedTtsProvider = "browser";
+      renderTtsProviderSelects();
+      loadVoices();
+      ttsStatus.textContent = `${failedProvider} failed, browser fallback`;
       ttsStatus.className = "tts-status fallback";
       console.warn(error);
       return speakActiveScene();
@@ -1853,7 +1954,7 @@ async function play() {
   isPlaying = true;
   lastFrameTime = 0;
   playIcon.textContent = useOpenAiTts && ttsEnabled ? "Loading" : "Pause";
-  if (useOpenAiTts && ttsEnabled) ttsStatus.textContent = "Loading voice before timeline";
+  if (useOpenAiTts && ttsEnabled) ttsStatus.textContent = `Loading ${currentTtsProviderLabel()} voice before timeline`;
   const started = await speakActiveScene();
   if (!isPlaying) return;
   if (ttsEnabled && !started) {
@@ -1887,7 +1988,7 @@ function downloadFilename() {
     .replace(/[^a-z0-9가-힣]+/g, "-")
     .replace(/^-+|-+$/g, "")
     .slice(0, 72);
-  return `${base || "html-tts-video"}-${selectedOpenAiVoice || "voice"}-1080p.webm`;
+  return `${base || "html-tts-video"}-${selectedTtsProvider}-${selectedOpenAiVoice || "voice"}-1080p.webm`;
 }
 
 function canvasFont(size, weight = 800) {
@@ -2137,6 +2238,7 @@ function wait(ms) {
 
 async function recordYouTubeVideo() {
   if (!window.MediaRecorder) throw new Error("MediaRecorder is unavailable in this browser.");
+  if (!useOpenAiTts) throw new Error("1080p export needs OpenAI, Google, or macOS server TTS, not browser-only TTS.");
   const canvas = document.createElement("canvas");
   canvas.width = 1920;
   canvas.height = 1080;
@@ -2239,15 +2341,17 @@ async function renderDownload() {
 
 function loadVoices() {
   if (useOpenAiTts) {
+    const voicesForProvider = currentProviderVoices();
     const previous = selectedOpenAiVoice || voiceSelect.value;
-    const defaultVoice = openAiVoices.includes(BEST_OPENAI_VOICE)
-      ? BEST_OPENAI_VOICE
-      : openAiVoices.includes(BACKUP_OPENAI_VOICE)
-        ? BACKUP_OPENAI_VOICE
-        : openAiVoices[0];
-    selectedOpenAiVoice = openAiVoices.includes(previous) ? previous : defaultVoice;
+    const backupVoice =
+      selectedTtsProvider === "openai" && voicesForProvider.includes(BACKUP_OPENAI_VOICE) ? BACKUP_OPENAI_VOICE : "";
+    const defaultVoice = voicesForProvider.includes(currentBestVoice())
+      ? currentBestVoice()
+      : backupVoice || voicesForProvider[0];
+    selectedOpenAiVoice = voicesForProvider.includes(previous) ? previous : defaultVoice;
     renderOpenAiVoiceOptions(voiceSelect);
     renderOpenAiVoiceOptions(builderVoiceSelect);
+    updateVoiceUrl();
     renderVersionLinks();
     return;
   }
@@ -2263,10 +2367,12 @@ function loadVoices() {
   voices = window.speechSynthesis.getVoices();
   const koreanVoices = voices.filter((voice) => voice.lang.toLowerCase().startsWith("ko"));
   const preferred = koreanVoices.length ? koreanVoices : voices;
+  voiceSelect.disabled = false;
   voiceSelect.innerHTML = preferred
     .map((voice) => `<option value="${voice.name}">${voice.name} (${voice.lang})</option>`)
     .join("");
   if (builderVoiceSelect) {
+    builderVoiceSelect.disabled = false;
     builderVoiceSelect.innerHTML = voiceSelect.innerHTML;
     builderVoiceSelect.value = voiceSelect.value;
   }
@@ -2296,18 +2402,16 @@ downloadBtn?.addEventListener("click", renderDownload);
 
 voiceSelect.addEventListener("change", async () => {
   if (useOpenAiTts) {
-    selectedOpenAiVoice = voiceSelect.value || BEST_OPENAI_VOICE;
+    selectedOpenAiVoice = voiceSelect.value || currentBestVoice();
     syncBuilderVoice();
-    const url = new URL(window.location.href);
-    url.searchParams.set("voice", selectedOpenAiVoice);
-    window.history.replaceState(null, "", `${url.pathname}${url.search}`);
-    warmupToken += 1;
+    updateVoiceUrl();
+    clearAudioCaches();
     sceneDurations = scenes.map((scene) => scene.duration || PAGE_SECONDS);
     rebuildTimeline();
     renderScriptList();
     renderVersionLinks();
     updateView({ suppressSpeech: true });
-    ttsStatus.textContent = `Selected ${selectedOpenAiVoice} full version`;
+    ttsStatus.textContent = `Selected ${selectedOpenAiVoice} via ${currentTtsProviderLabel()}`;
     ttsStatus.className = "tts-status openai";
   }
   audioBufferCache.clear();
@@ -2322,6 +2426,38 @@ builderVoiceSelect?.addEventListener("change", () => {
   if (!voiceSelect || builderVoiceSelect.value === voiceSelect.value) return;
   voiceSelect.value = builderVoiceSelect.value;
   voiceSelect.dispatchEvent(new Event("change"));
+});
+
+async function changeTtsProvider(provider) {
+  const normalized = normalizeTtsProvider(provider);
+  const nextProvider = ttsProviders.find((item) => item.id === normalized);
+  if (nextProvider && !nextProvider.available && normalized !== "browser") return;
+  pause();
+  selectedTtsProvider = normalized;
+  useOpenAiTts = selectedTtsProvider !== "browser";
+  clearAudioCaches();
+  sceneDurations = scenes.map((scene) => scene.duration || PAGE_SECONDS);
+  rebuildTimeline();
+  renderTtsProviderSelects();
+  loadVoices();
+  updateVoiceUrl();
+  renderScriptList();
+  updateView({ suppressSpeech: true });
+  if (useOpenAiTts) {
+    ttsStatus.textContent = `Selected ${currentTtsProviderLabel()}`;
+    ttsStatus.className = "tts-status openai";
+    previewSelectedOpenAiVoice(selectedOpenAiVoice);
+    warmAllSceneAudio(selectedOpenAiVoice);
+  } else {
+    ttsStatus.textContent = "Browser voice fallback";
+    ttsStatus.className = "tts-status fallback";
+  }
+}
+
+[ttsProviderSelect, playbackTtsProviderSelect].forEach((selectEl) => {
+  selectEl?.addEventListener("change", async () => {
+    await changeTtsProvider(selectEl.value);
+  });
 });
 
 styleSelect?.addEventListener("change", () => {
@@ -2471,21 +2607,70 @@ async function loadVoiceBackend() {
   try {
     const response = await fetch("/api/status", { cache: "no-store" });
     const status = await response.json();
-    useOpenAiTts = Boolean(status.openaiTts);
-    openAiVoices = Array.isArray(status.voices) ? status.voices : [];
+    const legacyProviders = [
+      {
+        id: "openai",
+        label: status.provider || "OpenAI TTS",
+        available: Boolean(status.openaiTts),
+        model: status.model,
+        reasoningEffort: status.reasoningEffort,
+        bestVoice: status.bestVoice || BEST_OPENAI_VOICE,
+        voices: Array.isArray(status.voices) ? status.voices : [],
+      },
+      {
+        id: "browser",
+        label: "Browser system TTS",
+        available: true,
+        model: "speechSynthesis",
+        bestVoice: "",
+        voices: [],
+      },
+    ];
+    ttsProviders = (
+      Array.isArray(status.providers) && status.providers.length ? status.providers : legacyProviders
+    ).map((provider) => ({
+      ...provider,
+      id: normalizeTtsProvider(provider.id),
+      available: provider.id === "browser" ? true : Boolean(provider.available),
+      voices: Array.isArray(provider.voices) ? provider.voices : [],
+    }));
+    providerVoices = ttsProviders.reduce(
+      (acc, provider) => {
+        acc[provider.id] = provider.voices;
+        return acc;
+      },
+      { openai: [], google: [], macos: [] },
+    );
+    providerBestVoices = ttsProviders.reduce(
+      (acc, provider) => {
+        if (provider.bestVoice) acc[provider.id] = provider.bestVoice;
+        return acc;
+      },
+      { openai: BEST_OPENAI_VOICE, google: BEST_GOOGLE_TTS_VOICE, macos: BEST_MACOS_TTS_VOICE },
+    );
+    const requestedProvider = normalizeTtsProvider(params.get("tts") || selectedTtsProvider);
+    const requestedAvailable = ttsProviders.some(
+      (provider) => provider.id === requestedProvider && (provider.available || provider.id === "browser"),
+    );
+    selectedTtsProvider = requestedAvailable
+      ? requestedProvider
+      : ttsProviders.find((provider) => provider.id === "openai" && provider.available)?.id ||
+        ttsProviders.find((provider) => provider.id === "google" && provider.available)?.id ||
+        ttsProviders.find((provider) => provider.id === "macos" && provider.available)?.id ||
+        "browser";
+    useOpenAiTts = selectedTtsProvider !== "browser";
+    renderTtsProviderSelects();
     if (useOpenAiTts) {
       const requestedVoice = params.get("voice");
-      selectedOpenAiVoice = openAiVoices.includes(requestedVoice)
+      const voicesForProvider = currentProviderVoices();
+      selectedOpenAiVoice = voicesForProvider.includes(requestedVoice)
         ? requestedVoice
-        : openAiVoices.includes(status.bestVoice)
-          ? status.bestVoice
-          : openAiVoices.includes(BEST_OPENAI_VOICE)
-            ? BEST_OPENAI_VOICE
-            : openAiVoices.includes(BACKUP_OPENAI_VOICE)
-              ? BACKUP_OPENAI_VOICE
-              : openAiVoices[0];
-      const effortLabel = status.reasoningEffort ? ` / ${status.reasoningEffort}` : "";
-      ttsStatus.textContent = `${status.provider || "OpenAI"} ${status.model}${effortLabel} ready`;
+        : voicesForProvider.includes(currentBestVoice())
+          ? currentBestVoice()
+          : voicesForProvider[0];
+      const provider = currentTtsProvider();
+      const effortLabel = provider?.reasoningEffort ? ` / ${provider.reasoningEffort}` : "";
+      ttsStatus.textContent = `${currentTtsProviderLabel()} ${provider?.model || ""}${effortLabel} ready`;
       backendLabel = ttsStatus.textContent;
       ttsStatus.className = "tts-status openai";
     } else {
@@ -2494,6 +2679,8 @@ async function loadVoiceBackend() {
     }
   } catch {
     useOpenAiTts = false;
+    selectedTtsProvider = "browser";
+    renderTtsProviderSelects();
     ttsStatus.textContent = "Browser voice fallback";
     ttsStatus.className = "tts-status fallback";
   }
