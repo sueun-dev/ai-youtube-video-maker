@@ -1822,11 +1822,31 @@ input[type="range"] {
   border-radius: 0;
 }
 
-.app-shell[data-clean="true"] .controls,
 .app-shell[data-clean="true"] .builder-panel,
 .app-shell[data-clean="true"] .download-panel,
 .app-shell[data-clean="true"] .script-panel {
   display: none;
+}
+
+.app-shell[data-clean="true"] .controls {
+  position: fixed;
+  right: 1rem;
+  bottom: 1rem;
+  z-index: 80;
+  margin: 0;
+}
+
+.app-shell[data-clean="true"] .controls > :not(#cleanBtn) {
+  display: none;
+}
+
+.app-shell[data-clean="true"] #cleanBtn {
+  display: inline-flex;
+  align-items: center;
+  border-color: rgba(255, 255, 255, 0.28);
+  background: rgba(0, 0, 0, 0.68);
+  color: #fff;
+  box-shadow: 0 0.8rem 2.5rem rgba(0, 0, 0, 0.42);
 }
 
 @keyframes orbitSpin {

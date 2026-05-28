@@ -1695,6 +1695,18 @@ function resetBriefReview() {
   }
 }
 
+function setCleanMode(enabled, options = {}) {
+  const next = Boolean(enabled);
+  appShell.dataset.clean = String(next);
+  cleanBtn.textContent = next ? "Exit Clean" : "Clean View";
+  cleanBtn.setAttribute("aria-pressed", String(next));
+  if (options.updateUrl === false) return;
+  const url = new URL(window.location.href);
+  if (next) url.searchParams.set("clean", "1");
+  else url.searchParams.delete("clean");
+  window.history.replaceState(null, "", `${url.pathname}${url.search}`);
+}
+
 function invalidateBrief() {
   currentBrief = null;
   if (generateBtn) generateBtn.disabled = true;
@@ -2607,9 +2619,7 @@ muteBtn.addEventListener("click", () => {
 });
 
 cleanBtn.addEventListener("click", () => {
-  const next = appShell.dataset.clean !== "true";
-  appShell.dataset.clean = String(next);
-  cleanBtn.textContent = next ? "Exit Clean" : "Clean View";
+  setCleanMode(appShell.dataset.clean !== "true");
 });
 
 downloadBtn?.addEventListener("click", renderDownload);
@@ -2834,6 +2844,10 @@ window.addEventListener("keydown", (event) => {
     event.preventDefault();
     jumpSceneBy(1);
   }
+  if (event.key === "Escape" && appShell.dataset.clean === "true") {
+    event.preventDefault();
+    setCleanMode(false);
+  }
   if (event.key.toLowerCase() === "r") restart();
 });
 
@@ -2949,7 +2963,6 @@ renderScriptList();
 if (scriptTitle) scriptTitle.textContent = currentManifest.title;
 loadVoiceBackend();
 if (params.get("clean") === "1") {
-  appShell.dataset.clean = "true";
-  cleanBtn.textContent = "Exit Clean";
+  setCleanMode(true, { updateUrl: false });
 }
 updateView();
