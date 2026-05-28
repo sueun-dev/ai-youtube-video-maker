@@ -1652,6 +1652,26 @@ function setBuildStatus(message, tone = "ok") {
   buildStatus.dataset.tone = tone;
 }
 
+function manifestBlockReason(manifest) {
+  const route = String(manifest?.route || "");
+  if (/fallback/i.test(route)) {
+    return "AI 생성이 로컬 템플릿으로 떨어졌습니다. 잘못된 주제 영상이 될 수 있어서 막았습니다.";
+  }
+  if (manifest?.quality?.passed === false) {
+    const issues = Array.isArray(manifest.quality.issues) ? manifest.quality.issues.slice(0, 4).join(" · ") : "";
+    return issues ? `품질 게이트 실패: ${issues}` : "품질 게이트를 통과하지 못했습니다.";
+  }
+  return "";
+}
+
+function generationErrorMessage(payload, fallback = "Generate failed.") {
+  const parts = [payload?.error || fallback, payload?.warning, payload?.quality?.issues?.slice?.(0, 4)?.join(" · ")]
+    .filter(Boolean)
+    .map((part) => String(part).trim())
+    .filter(Boolean);
+  return parts.join(" ");
+}
+
 function topicSignature() {
   return JSON.stringify({
     topic: topicInput?.value.replace(/\s+/g, " ").trim() || "",
@@ -1773,6 +1793,8 @@ function applyManifest(manifest, voice = selectedOpenAiVoice) {
     research: manifest.research || null,
     sourceQuality: manifest.quality?.sourceQuality || manifest.research?.sourceQuality || null,
     quality: manifest.quality || null,
+    route: manifest.route || "",
+    warning: manifest.warning || "",
     scenes,
   };
   appShell.dataset.template = currentManifest.style;
@@ -2456,6 +2478,8 @@ function wait(ms) {
 async function recordYouTubeVideo() {
   if (!window.MediaRecorder) throw new Error("MediaRecorder is unavailable in this browser.");
   if (!useOpenAiTts) throw new Error("1080p export needs OpenAI, Google, or macOS server TTS, not browser-only TTS.");
+  const blocked = manifestBlockReason(currentManifest);
+  if (blocked) throw new Error(`Render blocked: ${blocked}`);
   const canvas = document.createElement("canvas");
   canvas.width = 1920;
   canvas.height = 1080;
@@ -2784,7 +2808,9 @@ async function generateVideoFromTopic(options = {}) {
       body: JSON.stringify({ topic, voice, style, notes, sceneCount: 30, targetSeconds: 300 }),
     });
     const manifest = await response.json();
-    if (!response.ok) throw new Error(manifest.error || "Generate failed.");
+    if (!response.ok) throw new Error(generationErrorMessage(manifest, "Generate failed."));
+    const blocked = manifestBlockReason(manifest);
+    if (blocked) throw new Error(blocked);
     applyManifest(manifest, voice);
     const score = manifest.quality?.score;
     const sourceCount = manifest.sources?.length || manifest.research?.sources?.length || 0;

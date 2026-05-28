@@ -16,7 +16,20 @@ const oauthHelper = join(root, "scripts/oauth_realtime_tts.py");
 const oauthManifestHelper = join(root, "scripts/oauth_manifest.py");
 const realtimeModel = process.env.OPENAI_REALTIME_MODEL || "gpt-realtime-2";
 const realtimeReasoningEffort = process.env.OPENAI_REALTIME_REASONING_EFFORT || "xhigh";
-const manifestHelperTimeoutMs = Math.max(15000, Number(process.env.OPENAI_MANIFEST_TIMEOUT_MS) || 45000);
+const manifestHelperTimeoutMs = Math.max(60000, Number(process.env.OPENAI_MANIFEST_TIMEOUT_MS) || 180000);
+const allowTemplateFallback = process.env.ALLOW_TEMPLATE_FALLBACK === "1";
+const manifestReasoningEfforts = (
+  process.env.OPENAI_MANIFEST_REASONING_EFFORTS ||
+  process.env.OPENAI_MANIFEST_REASONING_EFFORT ||
+  "low,medium"
+)
+  .split(",")
+  .map((item) => item.trim())
+  .filter(
+    (item, index, list) =>
+      item && ["minimal", "low", "medium", "high", "xhigh"].includes(item) && list.indexOf(item) === index,
+  );
+if (!manifestReasoningEfforts.length) manifestReasoningEfforts.push("high");
 const ttsRequestTimeoutMs = Math.max(10000, Number(process.env.TTS_REQUEST_TIMEOUT_MS) || 45000);
 const realtimeVoices = ["marin", "cedar", "alloy", "ash", "ballad", "coral", "echo", "sage", "shimmer", "verse"];
 const openaiApiVoices = [
@@ -711,6 +724,13 @@ function stripHtml(value) {
     .trim();
 }
 
+function normalizeTopicText(value) {
+  return String(value || "")
+    .replace(/\s+/g, " ")
+    .replace(/블럭체인/g, "블록체인")
+    .trim();
+}
+
 function hostOf(url) {
   try {
     return new URL(url).host.replace(/^www\./, "");
@@ -736,6 +756,9 @@ const primarySourceHostPatterns = [
   /^blog\.google$/i,
   /(^|\.)google\.com$/i,
   /(^|\.)android\.com$/i,
+  /(^|\.)kisa\.or\.kr$/i,
+  /(^|\.)ethereum\.org$/i,
+  /(^|\.)bitcoin\.org$/i,
   /(^|\.)anthropic\.com$/i,
   /(^|\.)microsoft\.com$/i,
   /(^|\.)apple\.com$/i,
@@ -753,6 +776,7 @@ const trustedSourceHostPatterns = [
   /(^|\.)wired\.com$/i,
   /(^|\.)technologyreview\.com$/i,
   /(^|\.)reuters\.com$/i,
+  /(^|\.)chainalysis\.com$/i,
   /(^|\.)apnews\.com$/i,
   /(^|\.)bloomberg\.com$/i,
   /(^|\.)ft\.com$/i,
@@ -771,6 +795,8 @@ function sourceLooksPrimaryForTopic(host, topic) {
         host,
       )) ||
     (/google|gemini|android/.test(text) && /(google\.com|googleblog\.com|blog\.google|android\.com)$/.test(host)) ||
+    (/블록체인|블럭체인|blockchain|bitcoin|ethereum|crypto|암호화폐/.test(text) &&
+      /(blockchain\.kisa\.or\.kr|kisa\.or\.kr|ethereum\.org|bitcoin\.org)$/.test(host)) ||
     (/anthropic|claude/.test(text) && /anthropic\.com$/.test(host)) ||
     (/microsoft|windows|azure|copilot/.test(text) && /microsoft\.com$/.test(host)) ||
     (/apple|ios|macos|vision/.test(text) && /apple\.com$/.test(host)) ||
@@ -910,7 +936,10 @@ async function verifySource(source) {
 async function verifySources(sources, topic = "") {
   const checked = await Promise.all(sources.map((source) => verifySource(source)));
   const verified = checked.filter((source) => source.verified);
-  return rankSourceCandidates(verified.length ? verified : checked, topic).slice(0, 5);
+  const ranked = rankSourceCandidates(verified.length ? verified : checked, topic);
+  const strong = ranked.filter((source) => ["primary", "trusted"].includes(source.tier));
+  const usable = strong.length >= 3 ? strong : ranked.filter((source) => source.tier !== "weak");
+  return (usable.length ? usable : ranked).slice(0, 5);
 }
 
 function researchRequiredFor(topic, style) {
@@ -942,12 +971,47 @@ function officialSearchQueries(topic, latinQuery, shortQuery) {
       `site:android-developers.googleblog.com ${base}`,
     ];
   }
+  if (/블록체인|블럭체인|blockchain|bitcoin|ethereum|crypto|암호화폐/.test(text)) {
+    return [
+      `site:blockchain.kisa.or.kr ${base}`,
+      `site:kisa.or.kr ${base}`,
+      `site:ethereum.org ${base}`,
+      `site:bitcoin.org ${base}`,
+      `site:chainalysis.com ${base}`,
+    ];
+  }
   if (/anthropic|claude/.test(text)) return [`site:anthropic.com ${base}`];
   if (/microsoft|azure|copilot|windows/.test(text))
     return [`site:microsoft.com ${base}`, `site:azure.microsoft.com ${base}`];
   if (/nvidia|cuda|gb200|gb300/.test(text)) return [`site:nvidia.com ${base}`];
   if (/apple|ios|macos|vision/.test(text)) return [`site:apple.com ${base}`];
   return [];
+}
+
+function officialSourceSeeds(topic) {
+  const text = normalizeTopicText(topic).toLowerCase();
+  if (!/블록체인|blockchain|bitcoin|ethereum|crypto|암호화폐/.test(text)) return [];
+  return [
+    {
+      title: "블록체인 기술 및 산업 정보 - KISA",
+      url: "https://blockchain.kisa.or.kr/",
+      host: "blockchain.kisa.or.kr",
+      snippet: "KISA가 제공하는 블록체인 기술, 정책, 산업 정보 포털입니다.",
+    },
+    {
+      title: "Intro to Ethereum - ethereum.org",
+      url: "https://ethereum.org/en/developers/docs/intro-to-ethereum/",
+      host: "ethereum.org",
+      snippet: "Ethereum documentation explains blockchain, blocks, transactions, nodes, and the Ethereum network.",
+    },
+    {
+      title: "Bitcoin: A Peer-to-Peer Electronic Cash System",
+      url: "https://bitcoin.org/bitcoin.pdf",
+      host: "bitcoin.org",
+      snippet:
+        "The Bitcoin whitepaper describes a peer-to-peer electronic cash system using proof-of-work and a chain of blocks.",
+    },
+  ];
 }
 
 function parseSearchResults(html) {
@@ -983,12 +1047,12 @@ function parseSearchResults(html) {
 
 async function researchTopic(topic, style) {
   const required = researchRequiredFor(topic, style);
-  const query = topic;
+  const query = normalizeTopicText(topic);
   const research = { required, query, sources: [], sourceQuality: sourceQualitySummary([]), warnings: [] };
   if (!required) return research;
 
   try {
-    const topicTokens = topic.split(/\s+/).filter(Boolean);
+    const topicTokens = query.split(/\s+/).filter(Boolean);
     const latinQuery = topicTokens
       .filter((token) => /[a-z0-9]/i.test(token))
       .slice(0, 4)
@@ -997,8 +1061,8 @@ async function researchTopic(topic, style) {
     const queries = [
       ...new Set(
         [
-          ...officialSearchQueries(topic, latinQuery, shortQuery),
-          topic,
+          ...officialSearchQueries(query, latinQuery, shortQuery),
+          query,
           shortQuery,
           latinQuery,
           latinQuery ? `${latinQuery} official announcement` : "",
@@ -1010,6 +1074,9 @@ async function researchTopic(topic, style) {
       ),
     ];
     const byUrl = new Map();
+    for (const seed of officialSourceSeeds(query)) {
+      byUrl.set(seed.url, seed);
+    }
     for (const nextQuery of queries) {
       const html = await fetchTextWithTimeout(`https://duckduckgo.com/html/?q=${encodeURIComponent(nextQuery)}`, {
         headers: {
@@ -1020,11 +1087,11 @@ async function researchTopic(topic, style) {
       for (const result of parseSearchResults(html)) {
         if (!byUrl.has(result.url)) byUrl.set(result.url, result);
       }
-      const ranked = rankSourceCandidates([...byUrl.values()], topic);
+      const ranked = rankSourceCandidates([...byUrl.values()], query);
       if (byUrl.size >= 12 && sourceQualitySummary(ranked.slice(0, 5)).primaryCount > 0) break;
     }
-    const candidates = rankSourceCandidates([...byUrl.values()], topic).slice(0, 10);
-    research.sources = await verifySources(candidates, topic);
+    const candidates = rankSourceCandidates([...byUrl.values()], query).slice(0, 10);
+    research.sources = await verifySources(candidates, query);
     research.sourceQuality = sourceQualitySummary(research.sources);
     if (!research.sources.length) research.warnings.push("No search results parsed.");
     if (research.sources.some((source) => !source.verified))
@@ -1446,10 +1513,86 @@ function repairDeliveryVariety(scenes, style) {
   });
 }
 
+const topicKeywordStopwords = new Set([
+  "영상",
+  "설명",
+  "내용",
+  "정리",
+  "분석",
+  "만들기",
+  "방법",
+  "이유",
+  "원인",
+  "작동",
+  "원리",
+  "최신",
+  "발표",
+  "공개",
+  "about",
+  "video",
+  "explain",
+  "explainer",
+  "documentary",
+  "why",
+  "how",
+  "what",
+  "and",
+  "the",
+]);
+
+function normalizeKeywordText(value) {
+  return normalizeTopicText(stripHtml(value))
+    .toLowerCase()
+    .replace(/[^\d.a-z가-힣]+/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function topicKeywords(topic) {
+  const normalized = normalizeKeywordText(topic);
+  const keywords = normalized
+    .split(/\s+/)
+    .map((token) => token.replace(/^[^\d.a-z가-힣]+|[^\d.a-z가-힣]+$/gi, ""))
+    .filter((token) => token.length >= 2 && !topicKeywordStopwords.has(token));
+
+  if (/블록체인|blockchain|bitcoin|ethereum|crypto|암호화폐/.test(normalized)) {
+    keywords.push("블록체인", "blockchain", "블록", "분산", "합의", "원장", "노드", "해시", "채굴");
+  }
+
+  return [...new Set(keywords)].slice(0, 12);
+}
+
+function topicAlignmentSummary(scenes, topic) {
+  const keywords = topicKeywords(topic);
+  const contentScenes = scenes.filter((scene) => !["sources", "final"].includes(scene.layout));
+  if (!keywords.length || !contentScenes.length) {
+    return { keywords, contentCount: contentScenes.length, bodyRatio: 1, titleRatio: 1 };
+  }
+
+  let bodyMatches = 0;
+  let titleMatches = 0;
+  for (const scene of contentScenes) {
+    const body = normalizeKeywordText(
+      `${scene.title || ""} ${scene.caption || ""} ${scene.speech || ""} ${scene.claim || ""} ${scene.mark || ""}`,
+    );
+    const title = normalizeKeywordText(`${scene.title || ""} ${scene.mark || ""}`);
+    if (keywords.some((keyword) => body.includes(keyword))) bodyMatches += 1;
+    if (keywords.some((keyword) => title.includes(keyword))) titleMatches += 1;
+  }
+
+  return {
+    keywords,
+    contentCount: contentScenes.length,
+    bodyRatio: bodyMatches / contentScenes.length,
+    titleRatio: titleMatches / contentScenes.length,
+  };
+}
+
 function scoreManifest(manifest, research) {
   let score = 100;
   const issues = [];
   const scenes = Array.isArray(manifest.scenes) ? manifest.scenes : [];
+  const alignment = topicAlignmentSummary(scenes, manifest.topic || research?.query || "");
 
   if (scenes.length !== manifest.sceneCount) {
     score -= 24;
@@ -1562,6 +1705,14 @@ function scoreManifest(manifest, research) {
     score -= 12;
     issues.push("Narration sounds too templated or boring.");
   }
+  if (alignment.keywords.length && alignment.contentCount > 4 && alignment.bodyRatio < 0.65) {
+    score -= 18;
+    issues.push(`Topic alignment is weak in narration: ${Math.round(alignment.bodyRatio * 100)}%.`);
+  }
+  if (alignment.keywords.length && alignment.contentCount > 4 && alignment.titleRatio < 0.3) {
+    score -= 12;
+    issues.push(`Topic alignment is weak on screen titles: ${Math.round(alignment.titleRatio * 100)}%.`);
+  }
 
   score = Math.max(0, Math.min(100, Math.round(score)));
   return {
@@ -1572,6 +1723,11 @@ function scoreManifest(manifest, research) {
       adjacentRepeats === 0,
     issues: issues.slice(0, 8),
     sourceQuality,
+    topicAlignment: {
+      keywords: alignment.keywords.slice(0, 8),
+      bodyRatio: Math.round(alignment.bodyRatio * 100) / 100,
+      titleRatio: Math.round(alignment.titleRatio * 100) / 100,
+    },
   };
 }
 
@@ -1916,9 +2072,7 @@ async function createBrief(req, res) {
     return;
   }
 
-  const topic = String(body.topic || "")
-    .replace(/\s+/g, " ")
-    .trim();
+  const topic = normalizeTopicText(body.topic);
   const style = normalizeStyle(body.style);
   const notes = clipText(body.notes, "", 1200);
   const sceneCount = Math.max(20, Math.min(36, Number(body.sceneCount) || 30));
@@ -1959,6 +2113,30 @@ async function createBrief(req, res) {
   json(res, 200, brief);
 }
 
+function manifestFailurePayload({ error, route, warning = "", research, manifest = null, quality = null }) {
+  const topic = manifest?.topic || research?.query || "";
+  const sources = normalizeSources(manifest?.sources?.length ? manifest.sources : research?.sources || [], topic);
+  const sourceQuality = sourceQualitySummary(sources);
+  return {
+    error,
+    route,
+    warning,
+    quality: quality || manifest?.quality || null,
+    research: {
+      required: Boolean(research?.required),
+      query: research?.query || topic,
+      sources,
+      sourceQuality,
+      warnings: Array.isArray(research?.warnings) ? research.warnings : [],
+    },
+  };
+}
+
+function qualityFailureMessage(quality) {
+  const issues = Array.isArray(quality?.issues) ? quality.issues.filter(Boolean).slice(0, 4) : [];
+  return issues.length ? issues.join(" ") : "Quality gate failed.";
+}
+
 async function createManifest(req, res) {
   let body;
   try {
@@ -1968,9 +2146,7 @@ async function createManifest(req, res) {
     return;
   }
 
-  const topic = String(body.topic || "")
-    .replace(/\s+/g, " ")
-    .trim();
+  const topic = normalizeTopicText(body.topic);
   const sceneCount = Math.max(20, Math.min(36, Number(body.sceneCount) || 30));
   if (topic.length < 2) {
     json(res, 400, { error: "Missing topic." });
@@ -2005,7 +2181,8 @@ async function createManifest(req, res) {
           notesHash,
           researchHash,
           sourceQuality: sourceQualitySummary(research.sources),
-          helper: "oauth-manifest-v11-source-evidence-xhigh",
+          efforts: manifestReasoningEfforts,
+          helper: "oauth-manifest-v14-compact-topic-gated-effort-retry",
         }),
       )
       .digest("hex");
@@ -2015,14 +2192,33 @@ async function createManifest(req, res) {
     await mkdir(cacheDir, { recursive: true });
     if (existsSync(manifestPath)) {
       const cached = JSON.parse(await readFile(manifestPath, "utf8"));
+      const quality = { ...scoreManifest(cached, research), attempts: cached.quality?.attempts || 0, maxAttempts: 2 };
+      cached.quality = quality;
+      if (!quality.passed) {
+        json(
+          res,
+          422,
+          manifestFailurePayload({
+            error: "Cached manifest failed the topic quality gate. No fallback video was rendered.",
+            route: "quality-gate-failed-cache",
+            warning: qualityFailureMessage(quality),
+            research,
+            manifest: cached,
+            quality,
+          }),
+        );
+        return;
+      }
       json(res, 200, { ...cached, route: "codex-oauth-text-cache" });
       return;
     }
     try {
       let bestManifest = null;
       let critique = "";
-      const maxAttempts = 2;
+      let lastGenerationError = null;
+      const maxAttempts = manifestReasoningEfforts.length;
       for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+        const reasoningEffort = manifestReasoningEfforts[attempt - 1] || manifestReasoningEfforts.at(-1) || "high";
         await writeFile(
           requestPath,
           JSON.stringify({
@@ -2034,26 +2230,63 @@ async function createManifest(req, res) {
             researchRequired: research.required,
             sources: research.sources,
             critique,
+            reasoningEffort,
           }),
         );
-        const { stdout } = await runProcess(oauthPython, [oauthManifestHelper, requestPath], {
-          cwd: oauthRoot,
-          env: { ...process.env, PYTHONPATH: `${oauthRoot}/src` },
-          timeoutMs: manifestHelperTimeoutMs,
-        });
-        const manifest = normalizeManifest(extractJson(stdout), topic, sceneCount, style, research);
-        const quality = scoreManifest(manifest, research);
-        manifest.quality = { ...quality, attempts: attempt, maxAttempts };
-        if (!bestManifest || quality.score > bestManifest.quality.score) bestManifest = manifest;
-        if (quality.passed) break;
-        critique = quality.issues.join(" ");
+        try {
+          const { stdout } = await runProcess(oauthPython, [oauthManifestHelper, requestPath], {
+            cwd: oauthRoot,
+            env: { ...process.env, PYTHONPATH: `${oauthRoot}/src` },
+            timeoutMs: manifestHelperTimeoutMs,
+          });
+          const manifest = normalizeManifest(extractJson(stdout), topic, sceneCount, style, research);
+          const quality = scoreManifest(manifest, research);
+          manifest.quality = { ...quality, attempts: attempt, maxAttempts, reasoningEffort };
+          if (!bestManifest || quality.score > bestManifest.quality.score) bestManifest = manifest;
+          if (quality.passed) break;
+          critique = quality.issues.join(" ");
+        } catch (error) {
+          lastGenerationError = error;
+          critique = `The previous ${reasoningEffort} attempt failed: ${String(error.message || error).slice(0, 180)}`;
+        }
       }
+      if (!bestManifest && lastGenerationError) throw lastGenerationError;
       const manifest = bestManifest || fallbackManifest(topic, sceneCount, style, research);
-      if (!manifest.quality) manifest.quality = { ...scoreManifest(manifest, research), attempts: 0, maxAttempts: 2 };
+      if (!manifest.quality) manifest.quality = { ...scoreManifest(manifest, research), attempts: 0, maxAttempts };
+      if (!manifest.quality.passed) {
+        json(
+          res,
+          422,
+          manifestFailurePayload({
+            error: "Generated manifest failed the topic quality gate. No fallback video was rendered.",
+            route: "quality-gate-failed",
+            warning: qualityFailureMessage(manifest.quality),
+            research,
+            manifest,
+          }),
+        );
+        return;
+      }
       await writeFile(manifestPath, JSON.stringify(manifest, null, 2));
       json(res, 200, { ...manifest, route: "codex-oauth-text" });
       return;
     } catch (error) {
+      if (!allowTemplateFallback) {
+        const message = String(error.message || error).slice(0, 500);
+        json(
+          res,
+          /timed out/i.test(message) ? 504 : 502,
+          manifestFailurePayload({
+            error: /timed out/i.test(message)
+              ? "AI manifest generation timed out. No fallback video was rendered."
+              : "AI manifest generation failed. No fallback video was rendered.",
+            route: /timed out/i.test(message) ? "manifest-timeout" : "manifest-generation-failed",
+            warning: message,
+            research,
+          }),
+        );
+        return;
+      }
       const manifest = fallbackManifest(topic, sceneCount, style, research);
       manifest.quality = { ...scoreManifest(manifest, research), attempts: 0, maxAttempts: 2 };
       json(res, 200, {
@@ -2063,6 +2296,20 @@ async function createManifest(req, res) {
       });
       return;
     }
+  }
+
+  if (!allowTemplateFallback) {
+    json(
+      res,
+      503,
+      manifestFailurePayload({
+        error: "AI manifest generator is unavailable. No fallback video was rendered.",
+        route: "manifest-unavailable",
+        warning: "OpenAI OAuth helper is not available in this runtime.",
+        research,
+      }),
+    );
+    return;
   }
 
   const manifest = fallbackManifest(topic, sceneCount, style, research);

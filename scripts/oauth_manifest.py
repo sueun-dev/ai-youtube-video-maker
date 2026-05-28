@@ -5,14 +5,17 @@ import os
 import sys
 from pathlib import Path
 
+import httpx
+
 BRIDGE_ROOT = Path(os.environ.get("OPENAI_OAUTH_ROOT") or Path(__file__).resolve().parents[2] / "openao-oauth-access")
 BRIDGE_SRC = BRIDGE_ROOT / "src"
 sys.path.insert(0, str(BRIDGE_SRC))
 
 from codex_oauth import (  # noqa: E402
+    CODEX_BASE_URL,
     DEFAULT_CODEX_MODEL,
     choose_runtime_source,
-    codex_openai_client,
+    codex_headers,
     fetch_codex_models,
     load_sources,
 )
@@ -47,6 +50,55 @@ def topic_type_guidance(topic_type: str) -> str:
     }.get(topic_type, "Teach mechanism with one strong example, one limitation, and one takeaway.")
 
 
+def response_text_from_payload(payload: object) -> str:
+    if not isinstance(payload, dict):
+        return ""
+    output_text = payload.get("output_text")
+    if isinstance(output_text, str) and output_text.strip():
+        return output_text.strip()
+
+    chunks: list[str] = []
+    for item in payload.get("output") or []:
+        if not isinstance(item, dict):
+            continue
+        for content in item.get("content") or []:
+            if not isinstance(content, dict):
+                continue
+            text = content.get("text")
+            if isinstance(text, str):
+                chunks.append(text)
+    return "\n".join(chunks).strip()
+
+
+def stream_response_text(access_token: str, payload: dict) -> str:
+    chunks: list[str] = []
+    completed_text = ""
+    headers = {**codex_headers(access_token), "content-type": "application/json"}
+    timeout = httpx.Timeout(connect=30.0, read=240.0, write=30.0, pool=30.0)
+    with httpx.Client(timeout=timeout) as client:
+        with client.stream("POST", f"{CODEX_BASE_URL}/responses", headers=headers, json=payload) as response:
+            response.raise_for_status()
+            for raw_line in response.iter_lines():
+                line = raw_line.decode("utf-8") if isinstance(raw_line, bytes) else raw_line
+                if not line or not line.startswith("data:"):
+                    continue
+                data = line[5:].strip()
+                if data == "[DONE]":
+                    break
+                try:
+                    event = json.loads(data)
+                except json.JSONDecodeError:
+                    continue
+                event_type = str(event.get("type") or "")
+                delta = event.get("delta")
+                if event_type.endswith("output_text.delta") and isinstance(delta, str):
+                    chunks.append(delta)
+                    continue
+                if event_type == "response.completed":
+                    completed_text = response_text_from_payload(event.get("response"))
+    return ("".join(chunks).strip() or completed_text).strip()
+
+
 def main() -> int:
     if len(sys.argv) != 2:
         print("usage: oauth_manifest.py request.json", file=sys.stderr)
@@ -61,6 +113,11 @@ def main() -> int:
     sources = request.get("sources") if isinstance(request.get("sources"), list) else []
     research_required = bool(request.get("researchRequired"))
     critique = str(request.get("critique") or "").strip()
+    reasoning_effort = str(
+        request.get("reasoningEffort") or os.environ.get("OPENAI_MANIFEST_REASONING_EFFORT") or "xhigh"
+    ).strip()
+    if reasoning_effort not in {"minimal", "low", "medium", "high", "xhigh"}:
+        reasoning_effort = "xhigh"
     if not topic:
         raise ValueError("topic is empty")
 
@@ -120,7 +177,7 @@ Sources:
 {source_text}
 {critique_rule}
 
-Return this JSON shape:
+Return this compact JSON shape. Omit fields that are not listed here; the renderer fills layout-specific defaults:
 {{
   "title": "short Korean video title",
   "subtitle": "short Korean subtitle",
@@ -147,18 +204,6 @@ Return this JSON shape:
         "pause": "short pause guidance for this page",
         "instruction": "one short English TTS direction for gpt-realtime-2"
       }},
-      "panels": [{{"title":"short","lines":["short","short","short"],"tone":"muted"}}, {{"title":"short","lines":["short","short","short"],"tone":"hot"}}],
-      "specs": [["label","value"],["label","value"],["label","value"],["label","value"]],
-      "cards": [["A","title","body"],["B","title","body"],["C","title","body"]],
-      "nodes": ["step","step","step","step","step"],
-      "activeNode": 2,
-      "metrics": [["label","value"],["label","value"],["label","value"],["label","value"]],
-      "code": ["line","line","line","line","line"],
-      "steps": ["step","step","step","step","step"],
-      "rows": [["check","result"],["check","result"],["check","result"]],
-      "decision": "short sentence",
-      "frames": [["head","body"],["head","body"],["head","body"]],
-      "route": ["step","step","step","step","step"],
       "stamp": "short uppercase closing stamp",
       "sources": [{{"title":"source title","url":"https://...","host":"example.com"}}]
     }}
@@ -167,6 +212,7 @@ Return this JSON shape:
 
 Rules:
 - Use only the fields needed by each layout, but every scene must include duration, layout, title, mark, caption, speech.
+- Keep the JSON compact. Do not output panels, specs, cards, nodes, metrics, code, steps, rows, frames, or route unless one of those fields is essential to a specific scene.
 - Every non-source scene should include claim and evidenceRefs. Use source IDs like S1 and S2 from the source list.
 - Do not use weak sources for central claims. If a claim has only weak support, phrase it cautiously or remove it.
 - The first scene must be hero.
@@ -184,36 +230,25 @@ Rules:
     source = choose_runtime_source(load_sources())
     models = fetch_codex_models(source.access_token or "")
     model = DEFAULT_CODEX_MODEL if DEFAULT_CODEX_MODEL in models or not models else models[0]
-    client = codex_openai_client(source.access_token or "")
-    chunks: list[str] = []
-    final = None
-    with client.responses.stream(
-        model=model,
-        store=False,
-        reasoning={"effort": "xhigh"},
-        instructions=instructions,
-        input=[{
-            "type": "message",
-            "role": "user",
-            "content": [{"type": "input_text", "text": prompt}],
-        }],
-    ) as stream:
-        for event in stream:
-            event_type = getattr(event, "type", "")
-            if "output_text.delta" in event_type:
-                delta = getattr(event, "delta", "")
-                if isinstance(delta, str):
-                    chunks.append(delta)
-        final = stream.get_final_response()
-    text = "".join(chunks).strip() or getattr(final, "output_text", "") or ""
-    if not text and final is not None:
-        fallback_chunks: list[str] = []
-        for item in getattr(final, "output", []) or []:
-            for content in getattr(item, "content", []) or []:
-                value = getattr(content, "text", None)
-                if isinstance(value, str):
-                    fallback_chunks.append(value)
-        text = "\n".join(fallback_chunks)
+    text = stream_response_text(
+        source.access_token or "",
+        {
+            "model": model,
+            "store": False,
+            "stream": True,
+            "reasoning": {"effort": reasoning_effort},
+            "instructions": instructions,
+            "input": [
+                {
+                    "type": "message",
+                    "role": "user",
+                    "content": [{"type": "input_text", "text": prompt}],
+                }
+            ],
+        },
+    )
+    if not text:
+        raise RuntimeError("Manifest helper returned no output text.")
     print(text)
     return 0
 
