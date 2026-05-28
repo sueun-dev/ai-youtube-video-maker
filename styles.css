@@ -1168,6 +1168,14 @@ mark {
   font-weight: 850;
 }
 
+.viewport b {
+  max-width: 100%;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 760;
+  line-height: 1.25;
+}
+
 .viewport.desktop {
   width: 28rem;
   height: 13rem;

@@ -1026,10 +1026,11 @@ function renderSceneBody(scene) {
     `;
   }
   if (scene.layout === "spectrum") {
+    const scale = scene.scale?.length ? scene.scale : ["기준", "결론"];
     return `
       ${title}
-      <div class="spectrum"><span>single</span><div class="bar"><i></i></div><span>version</span></div>
-      <div class="decision-card"><b>Version rule</b><p>${escapeHtml(scene.decision)}</p></div>
+      <div class="spectrum"><span>${escapeHtml(scale[0])}</span><div class="bar"><i></i></div><span>${escapeHtml(scale[1] || scale[0])}</span></div>
+      <div class="decision-card"><b>${escapeHtml(scene.mark || "판단")}</b><p>${escapeHtml(scene.decision)}</p></div>
     `;
   }
   if (scene.layout === "clean") {
@@ -1041,12 +1042,23 @@ function renderSceneBody(scene) {
     `;
   }
   if (scene.layout === "render") {
+    const frames = scene.frames?.length
+      ? scene.frames
+      : [
+          ["핵심", scene.title || "main point"],
+          ["근거", scene.claim || scene.caption || "source backed"],
+          ["다음", scene.caption || "next"],
+        ];
     return `
       ${title}
       <div class="viewport-wall">
-        <div class="viewport desktop"><span>desktop 16:9</span></div>
-        <div class="viewport tablet"><span>tablet crop</span></div>
-        <div class="viewport phone"><span>mobile stack</span></div>
+        ${frames
+          .slice(0, 3)
+          .map(
+            ([head, body], index) =>
+              `<div class="viewport ${index === 0 ? "desktop" : index === 1 ? "tablet" : "phone"}"><span>${escapeHtml(head)}</span><b>${escapeHtml(body)}</b></div>`,
+          )
+          .join("")}
       </div>
     `;
   }
@@ -2452,10 +2464,34 @@ function drawSceneCanvas(ctx, scene, index, sceneProgress, totalProgress) {
     ctx.fillStyle = gradient;
     ctx.fill();
   } else if (scene.layout === "render") {
-    fillCard(ctx, 360, 500, 650, 300, theme.coolStroke, theme.coolFill);
-    fillCard(ctx, 1060, 550, 360, 250, colorWithAlpha(green, 0.34), theme.greenFill);
-    drawTextBlock(ctx, "1920 x 1080", 685, 625, 420, 46, { color: cool, weight: 930 });
-    drawTextBlock(ctx, "16:9", 1240, 650, 260, 46, { color: green, weight: 930 });
+    const frameItems = scene.frames?.length
+      ? scene.frames
+      : [
+          ["핵심", scene.title || "main point"],
+          ["근거", scene.claim || scene.caption || "source backed"],
+          ["다음", scene.caption || "next"],
+        ];
+    [
+      [360, 500, 650, 300],
+      [1060, 535, 410, 265],
+      [1510, 575, 210, 225],
+    ].forEach(([x, y, cardWidth, cardHeight], i) => {
+      const [head, body] = frameItems[i] || frameItems[0] || ["핵심", scene.title];
+      fillCard(
+        ctx,
+        x,
+        y,
+        cardWidth,
+        cardHeight,
+        i === 1 ? colorWithAlpha(green, 0.34) : theme.coolStroke,
+        i === 1 ? theme.greenFill : theme.coolFill,
+      );
+      drawTextBlock(ctx, head, x + cardWidth / 2, y + 55, cardWidth - 70, 34, {
+        color: i === 1 ? green : cool,
+        weight: 920,
+      });
+      drawTextBlock(ctx, body, x + cardWidth / 2, y + 135, cardWidth - 80, 28, { color: softText, weight: 760 });
+    });
   } else {
     drawTextBlock(ctx, scene.caption, 960, 570, 1000, 38, { color: softText, weight: 800 });
   }

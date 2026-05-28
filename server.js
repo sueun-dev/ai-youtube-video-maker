@@ -1111,43 +1111,227 @@ function arrayOfPairs(value, fallback, size = 4) {
     ? value
         .filter((item) => Array.isArray(item) && item.length >= 2)
         .map((item) => [clipText(item[0], "label", 34), clipText(item[1], "value", 48)])
+        .filter(([label, value]) => !isGenericVisualText(label) && !isGenericVisualText(value))
     : [];
   return pairs.length ? pairs.slice(0, size) : fallback;
 }
 
-function normalizePanelList(value, topic) {
+const genericVisualTextPatterns = [
+  /audio duration/i,
+  /scene transition/i,
+  /scene json/i,
+  /voice wav/i,
+  /video export/i,
+  /desktop 16:9/i,
+  /tablet crop/i,
+  /mobile stack/i,
+  /^topic$/i,
+  /^outline$/i,
+  /^runtime$/i,
+  /^preview$/i,
+  /^export$/i,
+  /^format$/i,
+  /^voice$/i,
+  /^fixed$/i,
+  /^one$/i,
+  /^10s$/i,
+  /^300s$/i,
+  /^5 min$/i,
+  /^16:9$/i,
+];
+
+const visualTokenStopwords = new Set([
+  "그",
+  "이",
+  "저",
+  "것",
+  "수",
+  "있다",
+  "있는",
+  "합니다",
+  "입니다",
+  "그리고",
+  "하지만",
+  "영상",
+  "장면",
+  "화면",
+  "설명",
+  "핵심",
+  "정리",
+  "기준",
+  "흐름",
+  "구조",
+  "확인",
+  "근거",
+  "주제",
+  "내용",
+  "블록체인",
+  "blockchain",
+  "작동",
+  "원리",
+  "topic",
+  "scene",
+  "video",
+  "voice",
+  "html",
+  "tts",
+]);
+
+function isGenericVisualText(value) {
+  const text = String(value || "").trim();
+  if (!text) return false;
+  return genericVisualTextPatterns.some((pattern) => pattern.test(text));
+}
+
+function contentPhrasesFrom(value, max = 6) {
+  const text = stripHtml(value)
+    .replace(/\b\d{1,2}:\d{2}\b/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!text) return [];
+  const pieces = text
+    .split(/[.!?。！？\n]+|(?<=다)\s+|(?<=요)\s+/)
+    .map((item) => item.replace(/^(먼저|여기서|그리고|하지만|정리하면|즉)\s*/g, "").trim())
+    .filter((item) => item.length >= 6 && !isGenericVisualText(item));
+  const compact = pieces.length ? pieces : [text];
+  return compact
+    .map((item) => clipText(item, "", 34))
+    .filter((item, index, list) => item && list.indexOf(item) === index)
+    .slice(0, max);
+}
+
+function contentTermsFrom(value, max = 6) {
+  const text = normalizeTopicText(stripHtml(value))
+    .toLowerCase()
+    .replace(/[^\d.a-z가-힣]+/gi, " ");
+  const terms = text
+    .split(/\s+/)
+    .map((item) =>
+      item
+        .trim()
+        .replace(/(으로|에서|에게|부터|까지|처럼|보다|이며|하고|되는|한다|합니다|입니다|이다)$/g, "")
+        .replace(/(은|는|이|가|을|를|의|와|과|로|에)$/g, ""),
+    )
+    .filter((item) => item.length >= 2 && item.length <= 12 && !visualTokenStopwords.has(item))
+    .filter((item) => !/^\d+$/.test(item) && !isGenericVisualText(item));
+  return [...new Set(terms)].slice(0, max);
+}
+
+function sourceLabelFromRefs(refs, sources) {
+  if (!Array.isArray(refs) || !refs.length || !Array.isArray(sources) || !sources.length) return "";
+  const sourceMap = new Map(sources.map((source) => [source.id, source]));
+  return refs
+    .map((ref) => sourceMap.get(ref))
+    .filter(Boolean)
+    .map((source) => `${source.id} ${source.host || hostOf(source.url) || "source"}`)
+    .slice(0, 2)
+    .join(" · ");
+}
+
+function sceneVisualContext(scene, topic, sources = []) {
+  const text = `${scene.title || ""} ${scene.claim || ""} ${scene.caption || ""} ${scene.speech || ""} ${topic}`;
+  const phrases = contentPhrasesFrom(`${scene.claim || ""}. ${scene.speech || ""}. ${scene.caption || ""}`, 6);
+  const terms = contentTermsFrom(text, 8);
+  const sourceLabel = sourceLabelFromRefs(scene.evidenceRefs, sources);
+  const topicLabel = shortTopicLabel(topic);
+  const primary = terms[0] || clipText(scene.mark || scene.title, topicLabel, 16);
+  return {
+    topicLabel,
+    sourceLabel,
+    terms: terms.length ? terms : [topicLabel, "검증", "기록", "전환", "판단"],
+    phrases: phrases.length ? phrases : [scene.claim || scene.caption || scene.title, scene.speech || topicLabel],
+    primary,
+  };
+}
+
+function visualFallbacksFor(scene, topic, sources, index, sceneCount) {
+  const context = sceneVisualContext(scene, topic, sources);
+  const [first, second, third, fourth, fifth] = context.terms;
+  const [p1, p2, p3, p4] = context.phrases;
+  const source = context.sourceLabel || "검증된 출처";
+  return {
+    panels: [
+      { title: "겉으로 보이는 점", lines: [first, p1, source], tone: "muted" },
+      { title: "실제로 봐야 할 점", lines: [second || first, p2 || p1, third || context.topicLabel], tone: "hot" },
+    ],
+    specs: [
+      ["핵심", first],
+      ["근거", source],
+      ["작동", second || p1],
+      ["주의", p2 || "범위를 나눠 본다"],
+    ],
+    cards: [
+      ["1", first || "출발점", p1],
+      ["2", second || "검증", p2 || p1],
+      ["3", third || "결론", p3 || p2 || p1],
+    ],
+    nodes: [first, second, third, fourth, fifth].filter(Boolean).slice(0, 5),
+    clock: clipText(first, context.topicLabel, 14),
+    note: clipText(p1, scene.title, 72),
+    metrics: [
+      ["핵심", first],
+      ["근거", source.replace(/^S\d+\s*/, "")],
+      ["범위", second || context.topicLabel],
+      ["질문", third || "다음 판단"],
+    ],
+    code: [
+      `claim: ${clipText(scene.claim || p1, scene.title, 54)}`,
+      `source: ${source}`,
+      `term: ${first}`,
+      `check: ${clipText(p2 || p1, scene.title, 54)}`,
+      `next: ${clipText(p3 || scene.caption, context.topicLabel, 54)}`,
+    ],
+    steps: [p1, p2, p3, p4, scene.title]
+      .filter(Boolean)
+      .map((item) => clipText(item, "", 28))
+      .slice(0, 5),
+    rows: [
+      ["주장", clipText(scene.claim || p1, scene.title, 34)],
+      ["근거", source],
+      ["다음", clipText(p2 || scene.caption, scene.title, 34)],
+    ],
+    decision: clipText(scene.claim || p1 || scene.speech, scene.title, 96),
+    frames: [
+      ["핵심", clipText(first, context.topicLabel, 36)],
+      ["근거", clipText(source, "검증된 출처", 36)],
+      ["의미", clipText(p2 || p1, scene.title, 48)],
+    ],
+    route: [context.topicLabel, first, second, third, index >= sceneCount - 2 ? "결론" : "다음 질문"]
+      .filter(Boolean)
+      .slice(0, 5),
+  };
+}
+
+function normalizePanelList(value, fallbackPanels) {
   if (!Array.isArray(value) || value.length < 2) {
-    return [
-      { title: "Before", lines: ["흩어진 정보", "낮은 집중", "느린 이해"], tone: "muted" },
-      { title: "After", lines: [topic.slice(0, 18), "핵심 구조", "다음 행동"], tone: "hot" },
-    ];
+    return fallbackPanels;
   }
   return value.slice(0, 2).map((panel, index) => ({
     title: clipText(panel?.title, index === 0 ? "Before" : "After", 36),
     lines: Array.isArray(panel?.lines)
-      ? panel.lines.slice(0, 3).map((line) => clipText(line, "point", 34))
+      ? panel.lines
+          .filter((line) => !isGenericVisualText(line))
+          .slice(0, 3)
+          .map((line) => clipText(line, "point", 34))
       : ["point", "point", "point"],
     tone: panel?.tone === "hot" || index === 1 ? "hot" : "muted",
   }));
 }
 
-function normalizeCards(value, topic) {
+function normalizeCards(value, fallbackCards) {
   const cards = Array.isArray(value)
     ? value
         .filter((item) => Array.isArray(item) && item.length >= 3)
-        .map((item) => [clipText(item[0], "A", 8), clipText(item[1], "핵심", 28), clipText(item[2], topic, 48)])
+        .map((item) => [clipText(item[0], "A", 8), clipText(item[1], "핵심", 28), clipText(item[2], "", 48)])
+        .filter((item) => item.some((part) => !isGenericVisualText(part)))
     : [];
-  return cards.length
-    ? cards.slice(0, 3)
-    : [
-        ["1", "맥락", "왜 지금 중요한지"],
-        ["2", "구조", "어떤 흐름으로 작동하는지"],
-        ["3", "판단", "무엇을 확인해야 하는지"],
-      ];
+  return cards.length ? cards.slice(0, 3) : fallbackCards;
 }
 
 function normalizeStringList(value, fallback, size = 5, max = 34) {
-  const list = Array.isArray(value) ? value.map((item) => clipText(item, "step", max)).filter(Boolean) : [];
+  const list = Array.isArray(value)
+    ? value.map((item) => clipText(item, "step", max)).filter((item) => item && !isGenericVisualText(item))
+    : [];
   return list.length ? list.slice(0, size) : fallback;
 }
 
@@ -1322,69 +1506,57 @@ function normalizeScene(raw, index, sceneCount, topic, options = {}) {
   scene.delivery = normalizeDelivery(raw?.delivery, layout, index, sceneCount, options.style);
   scene.claim = clipText(raw?.claim, scene.caption || title, 150);
   scene.evidenceRefs = normalizeEvidenceRefs(raw?.evidenceRefs, options.sources || [], index, layout);
+  const visualFallbacks = visualFallbacksFor(scene, topic, options.sources || [], index, sceneCount);
 
   if (layout === "hero") {
-    scene.kicker = clipText(raw?.kicker, "HTML TTS VIDEO", 32).toUpperCase();
-    scene.subtitle = clipText(raw?.subtitle, "주제, 원고, 화면, 음성을 한 번에 맞춘 5분 설명 영상", 96);
+    scene.kicker = clipText(isGenericVisualText(raw?.kicker) ? "" : raw?.kicker, "DOCUMENTARY", 32).toUpperCase();
+    scene.subtitle = clipText(
+      isGenericVisualText(raw?.subtitle) ? "" : raw?.subtitle,
+      visualFallbacks.note || "핵심 흐름을 근거와 함께 따라간다",
+      96,
+    );
   }
-  if (layout === "compare") scene.panels = normalizePanelList(raw?.panels, topic);
+  if (layout === "compare") scene.panels = normalizePanelList(raw?.panels, visualFallbacks.panels);
   if (layout === "spec") {
-    scene.specs = arrayOfPairs(raw?.specs, [
-      ["topic", topic.slice(0, 24)],
-      ["runtime", "5 min"],
-      ["voice", "fixed"],
-      ["format", "16:9"],
-    ]);
+    scene.specs = arrayOfPairs(raw?.specs, visualFallbacks.specs);
   }
-  if (layout === "cards") scene.cards = normalizeCards(raw?.cards, topic);
+  if (layout === "cards") scene.cards = normalizeCards(raw?.cards, visualFallbacks.cards);
   if (layout === "flow") {
-    scene.nodes = normalizeStringList(raw?.nodes, ["hook", "context", "mechanism", "proof", "next"]);
+    scene.nodes = normalizeStringList(raw?.nodes, visualFallbacks.nodes);
     scene.activeNode = Number.isInteger(raw?.activeNode) ? Math.max(0, Math.min(4, raw.activeNode)) : 2;
   }
   if (layout === "clock") {
-    scene.clock = clipText(raw?.clock, "10s", 16);
-    scene.note = clipText(raw?.note, "audio duration controls the scene transition", 72);
+    scene.clock = clipText(isGenericVisualText(raw?.clock) ? "" : raw?.clock, visualFallbacks.clock, 16);
+    scene.note = clipText(isGenericVisualText(raw?.note) ? "" : raw?.note, visualFallbacks.note, 72);
   }
   if (layout === "metrics") {
-    scene.metrics = arrayOfPairs(raw?.metrics, [
-      ["pages", String(sceneCount)],
-      ["target", "300s"],
-      ["voice", "one"],
-      ["export", "1080p"],
-    ]);
+    scene.metrics = arrayOfPairs(raw?.metrics, visualFallbacks.metrics);
   }
   if (layout === "code") {
-    scene.code = normalizeStringList(raw?.code, ["topic", "outline", "scene json", "voice wav", "video export"], 5, 64);
+    scene.code = normalizeStringList(raw?.code, visualFallbacks.code, 5, 64);
   }
-  if (layout === "pipeline")
-    scene.steps = normalizeStringList(raw?.steps, ["topic", "script", "html", "voice", "export"]);
+  if (layout === "pipeline") scene.steps = normalizeStringList(raw?.steps, visualFallbacks.steps);
   if (layout === "qa") {
-    scene.rows = arrayOfPairs(
-      raw?.rows,
-      [
-        ["claim", "check"],
-        ["screen", "match"],
-        ["audio", "sync"],
-      ],
-      3,
+    scene.rows = arrayOfPairs(raw?.rows, visualFallbacks.rows, 3);
+  }
+  if (layout === "spectrum") {
+    scene.decision = clipText(isGenericVisualText(raw?.decision) ? "" : raw?.decision, visualFallbacks.decision, 96);
+    scene.scale = normalizeStringList(
+      raw?.scale,
+      [visualFallbacks.nodes[0] || "기준", visualFallbacks.nodes[1] || "결론"],
+      2,
+      18,
     );
   }
-  if (layout === "spectrum")
-    scene.decision = clipText(raw?.decision, "한 버전 안에서는 같은 목소리를 끝까지 유지한다.", 96);
+  if (layout === "render") {
+    scene.frames = arrayOfPairs(raw?.frames, visualFallbacks.frames, 3);
+  }
   if (layout === "clean") {
-    scene.frames = arrayOfPairs(
-      raw?.frames,
-      [
-        ["hook", "한 문장으로 시작"],
-        ["body", "근거와 구조"],
-        ["close", "명확한 결론"],
-      ],
-      3,
-    );
+    scene.frames = arrayOfPairs(raw?.frames, visualFallbacks.frames, 3);
   }
   if (layout === "final") {
-    scene.route = normalizeStringList(raw?.route, ["topic", "voice", "preview", "1080p", "done"]);
-    scene.stamp = clipText(raw?.stamp, "YOUTUBE READY", 32).toUpperCase();
+    scene.route = normalizeStringList(raw?.route, visualFallbacks.route);
+    scene.stamp = clipText(isGenericVisualText(raw?.stamp) ? "" : raw?.stamp, "SOURCE BACKED", 32).toUpperCase();
   }
   if (layout === "sources") {
     scene.sources = Array.isArray(raw?.sources) ? raw.sources.slice(0, 5) : [];
@@ -2182,7 +2354,7 @@ async function createManifest(req, res) {
           researchHash,
           sourceQuality: sourceQualitySummary(research.sources),
           efforts: manifestReasoningEfforts,
-          helper: "oauth-manifest-v14-compact-topic-gated-effort-retry",
+          helper: "oauth-manifest-v16-scene-specific-visuals",
         }),
       )
       .digest("hex");
@@ -2191,7 +2363,13 @@ async function createManifest(req, res) {
     const manifestPath = join(cacheDir, `${cacheKey}.manifest.json`);
     await mkdir(cacheDir, { recursive: true });
     if (existsSync(manifestPath)) {
-      const cached = JSON.parse(await readFile(manifestPath, "utf8"));
+      const cached = normalizeManifest(
+        JSON.parse(await readFile(manifestPath, "utf8")),
+        topic,
+        sceneCount,
+        style,
+        research,
+      );
       const quality = { ...scoreManifest(cached, research), attempts: cached.quality?.attempts || 0, maxAttempts: 2 };
       cached.quality = quality;
       if (!quality.passed) {
