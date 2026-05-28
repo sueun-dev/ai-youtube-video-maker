@@ -675,49 +675,6 @@ mark {
   overflow-wrap: break-word;
 }
 
-.hero-orbit {
-  position: absolute;
-  inset: 17% 19%;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 999px;
-  animation: orbitSpin 18s linear infinite;
-}
-
-.hero-orbit span {
-  position: absolute;
-  width: 0.8rem;
-  height: 0.8rem;
-  border-radius: 999px;
-  background: var(--hot);
-  box-shadow: 0 0 2rem rgba(232, 139, 97, 0.9);
-}
-
-.hero-orbit span:nth-child(1) {
-  top: 0;
-  left: 50%;
-}
-
-.hero-orbit span:nth-child(2) {
-  top: 50%;
-  right: 0;
-  background: var(--cool);
-  box-shadow: 0 0 2rem rgba(143, 183, 255, 0.8);
-}
-
-.hero-orbit span:nth-child(3) {
-  bottom: 0;
-  left: 34%;
-  background: var(--green);
-  box-shadow: 0 0 2rem rgba(138, 216, 158, 0.8);
-}
-
-.hero-orbit span:nth-child(4) {
-  top: 40%;
-  left: 0;
-  background: var(--hot-2);
-  box-shadow: 0 0 2rem rgba(255, 202, 117, 0.8);
-}
-
 .split-board,
 .repo-row,
 .spec-grid,
@@ -1847,12 +1804,6 @@ input[type="range"] {
   background: rgba(0, 0, 0, 0.68);
   color: #fff;
   box-shadow: 0 0.8rem 2.5rem rgba(0, 0, 0, 0.42);
-}
-
-@keyframes orbitSpin {
-  to {
-    transform: rotate(360deg);
-  }
 }
 
 @keyframes titleLift {

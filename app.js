@@ -940,7 +940,6 @@ function renderSceneBody(scene) {
         <h1>${renderTitle(scene)}</h1>
         <p>${escapeHtml(scene.subtitle)}</p>
       </div>
-      <div class="hero-orbit" aria-hidden="true"><span></span><span></span><span></span><span></span></div>
     `;
   }
   if (scene.layout === "compare") {
