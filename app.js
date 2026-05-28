@@ -1141,6 +1141,7 @@ const topicInput = document.querySelector("#topicInput");
 const topicNotes = document.querySelector("#topicNotes");
 const builderVoiceSelect = document.querySelector("#builderVoiceSelect");
 const styleSelect = document.querySelector("#styleSelect");
+const visualThemeSelect = document.querySelector("#visualThemeSelect");
 const prepareBtn = document.querySelector("#prepareBtn");
 const generateBtn = document.querySelector("#generateBtn");
 const buildStatus = document.querySelector("#buildStatus");
@@ -1172,6 +1173,69 @@ const VOICE_PREVIEW_TEXT =
   "이 문장은 목소리 비교용 샘플입니다. 같은 원고를 열 개의 목소리로 생성해서, 설명형 HTML 영상에 가장 자연스럽게 맞는 톤을 고릅니다.";
 const VOICE_PREVIEW_INSTRUCTIONS =
   "Speak in natural Korean, like a calm technical narrator. Keep it clear, steady, and not rushed. Do not sound like a customer-service greeting.";
+const VISUAL_THEME_IDS = ["studio", "blueprint", "paper", "terminal", "minimal"];
+const VISUAL_THEME_PALETTES = {
+  studio: {
+    accent: "#e88b61",
+    cool: "#8fb7ff",
+    green: "#8ad89e",
+    gold: "#ffca75",
+    ink: "#f4f1ea",
+    bg: ["#151411", "#101116", "#17130f"],
+    gridAlpha: 0.16,
+    gridStep: 160,
+    codeFill: "rgba(10,14,20,0.88)",
+    codeText: "#cfe0ff",
+  },
+  blueprint: {
+    accent: "#73a7ff",
+    cool: "#9bc7ff",
+    green: "#8fd5bd",
+    gold: "#f4d38e",
+    ink: "#f3f7ff",
+    bg: ["#07111f", "#0b1d33", "#081522"],
+    gridAlpha: 0.22,
+    gridStep: 140,
+    codeFill: "rgba(6,17,32,0.9)",
+    codeText: "#cde3ff",
+  },
+  paper: {
+    accent: "#b65f3c",
+    cool: "#5577aa",
+    green: "#4f8b68",
+    gold: "#a56d2b",
+    ink: "#181512",
+    bg: ["#f5efe3", "#eadfca", "#f7f2e8"],
+    gridAlpha: 0.18,
+    gridStep: 155,
+    codeFill: "rgba(255,248,235,0.84)",
+    codeText: "#31435f",
+  },
+  terminal: {
+    accent: "#69d38b",
+    cool: "#62c7d9",
+    green: "#9bdc7a",
+    gold: "#d4e06f",
+    ink: "#eaffec",
+    bg: ["#07100a", "#08180d", "#0b1209"],
+    gridAlpha: 0.2,
+    gridStep: 128,
+    codeFill: "rgba(2,12,7,0.9)",
+    codeText: "#a8ffc2",
+  },
+  minimal: {
+    accent: "#d8d8d8",
+    cool: "#9aa5b1",
+    green: "#c7d0b4",
+    gold: "#f0d080",
+    ink: "#f7f7f5",
+    bg: ["#070707", "#111111", "#050505"],
+    gridAlpha: 0.08,
+    gridStep: 190,
+    codeFill: "rgba(6,6,6,0.9)",
+    codeText: "#e6e6e6",
+  },
+};
 
 let currentTime = 0;
 let isPlaying = false;
@@ -1207,6 +1271,7 @@ let providerBestVoices = {
 };
 let selectedTtsProvider = normalizeTtsProvider(params.get("tts") || "gemini");
 let selectedOpenAiVoice = BEST_OPENAI_VOICE;
+let selectedVisualTheme = normalizeVisualTheme(params.get("theme") || "studio");
 let warmupToken = 0;
 const audioBufferCache = new Map();
 const audioBufferPromises = new Map();
@@ -1222,6 +1287,7 @@ let currentManifest = {
 };
 applyInitialBuilderParams();
 appShell.dataset.template = currentManifest.style;
+applyVisualTheme(selectedVisualTheme, { updateUrl: false });
 let initialAutoGenerateStarted = false;
 let currentBrief = null;
 
@@ -1453,6 +1519,62 @@ function updateVoiceUrl() {
   url.searchParams.set("tts", selectedTtsProvider);
   if (selectedOpenAiVoice) url.searchParams.set("voice", selectedOpenAiVoice);
   window.history.replaceState(null, "", `${url.pathname}${url.search}`);
+}
+
+function normalizeVisualTheme(value) {
+  return VISUAL_THEME_IDS.includes(value) ? value : "studio";
+}
+
+function applyVisualTheme(theme, options = {}) {
+  selectedVisualTheme = normalizeVisualTheme(theme);
+  appShell.dataset.visualTheme = selectedVisualTheme;
+  if (visualThemeSelect) visualThemeSelect.value = selectedVisualTheme;
+  if (options.updateUrl === false) return;
+  const url = new URL(window.location.href);
+  url.searchParams.set("theme", selectedVisualTheme);
+  window.history.replaceState(null, "", `${url.pathname}${url.search}`);
+}
+
+function currentVisualPalette() {
+  return VISUAL_THEME_PALETTES[selectedVisualTheme] || VISUAL_THEME_PALETTES.studio;
+}
+
+function colorWithAlpha(color, alpha) {
+  if (!color?.startsWith("#")) return color;
+  const hex = color.slice(1);
+  const value =
+    hex.length === 3
+      ? hex
+          .split("")
+          .map((char) => `${char}${char}`)
+          .join("")
+      : hex;
+  const int = Number.parseInt(value, 16);
+  if (!Number.isFinite(int)) return color;
+  const red = (int >> 16) & 255;
+  const green = (int >> 8) & 255;
+  const blue = int & 255;
+  return `rgba(${red},${green},${blue},${alpha})`;
+}
+
+function currentCanvasTheme() {
+  const palette = currentVisualPalette();
+  return {
+    ...palette,
+    muted: colorWithAlpha(palette.ink, 0.72),
+    softText: colorWithAlpha(palette.ink, 0.76),
+    faintText: colorWithAlpha(palette.ink, 0.58),
+    progressTrack: colorWithAlpha(palette.ink, 0.14),
+    gridLine: colorWithAlpha(palette.ink, 0.15),
+    panelStroke: colorWithAlpha(palette.ink, 0.16),
+    panelFill: colorWithAlpha(palette.ink, 0.055),
+    accentStroke: colorWithAlpha(palette.accent, 0.62),
+    accentFill: colorWithAlpha(palette.accent, 0.12),
+    coolStroke: colorWithAlpha(palette.cool, 0.34),
+    coolFill: colorWithAlpha(palette.cool, 0.08),
+    greenStroke: colorWithAlpha(palette.green, 0.58),
+    greenFill: colorWithAlpha(palette.green, 0.08),
+  };
 }
 
 function renderTtsProviderSelects() {
@@ -2101,7 +2223,7 @@ function wrapCanvasText(ctx, text, maxWidth) {
 
 function drawTextBlock(ctx, text, x, y, maxWidth, size, options = {}) {
   ctx.font = canvasFont(size, options.weight || 850);
-  ctx.fillStyle = options.color || "#f4f1ea";
+  ctx.fillStyle = options.color || currentCanvasTheme().ink;
   ctx.textAlign = options.align || "center";
   ctx.textBaseline = "top";
   const lineHeight = options.lineHeight || size * 1.18;
@@ -2121,11 +2243,12 @@ function roundRect(ctx, x, y, width, height, radius = 16) {
   ctx.closePath();
 }
 
-function fillCard(ctx, x, y, width, height, stroke = "rgba(255,255,255,0.16)", fill = "rgba(255,255,255,0.055)") {
+function fillCard(ctx, x, y, width, height, stroke, fill) {
+  const theme = currentCanvasTheme();
   roundRect(ctx, x, y, width, height, 18);
-  ctx.fillStyle = fill;
+  ctx.fillStyle = fill || theme.panelFill;
   ctx.fill();
-  ctx.strokeStyle = stroke;
+  ctx.strokeStyle = stroke || theme.panelStroke;
   ctx.lineWidth = 2;
   ctx.stroke();
 }
@@ -2137,21 +2260,19 @@ function drawCanvasTitle(ctx, scene, y = 145) {
 function drawSceneCanvas(ctx, scene, index, sceneProgress, totalProgress) {
   const width = 1920;
   const height = 1080;
-  const accent = "#e88b61";
-  const cool = "#8fb7ff";
-  const green = "#8ad89e";
-  const gold = "#ffca75";
+  const theme = currentCanvasTheme();
+  const { accent, cool, green, gold, ink, muted, softText, faintText } = theme;
 
   const bg = ctx.createLinearGradient(0, 0, width, height);
-  bg.addColorStop(0, "#151411");
-  bg.addColorStop(0.55, "#101116");
-  bg.addColorStop(1, "#17130f");
+  bg.addColorStop(0, theme.bg[0]);
+  bg.addColorStop(0.55, theme.bg[1]);
+  bg.addColorStop(1, theme.bg[2]);
   ctx.fillStyle = bg;
   ctx.fillRect(0, 0, width, height);
 
-  ctx.globalAlpha = 0.16;
-  for (let x = 120; x < width; x += 160) {
-    ctx.strokeStyle = x % 320 === 0 ? cool : "rgba(255,255,255,0.15)";
+  ctx.globalAlpha = theme.gridAlpha;
+  for (let x = 120; x < width; x += theme.gridStep) {
+    ctx.strokeStyle = x % (theme.gridStep * 2) === 0 ? cool : theme.gridLine;
     ctx.beginPath();
     ctx.moveTo(x + Math.sin(sceneProgress * Math.PI * 2) * 12, 0);
     ctx.lineTo(x - 60, height);
@@ -2166,13 +2287,13 @@ function drawSceneCanvas(ctx, scene, index, sceneProgress, totalProgress) {
   ctx.fillText((scene.kicker || currentManifest.title || "HTML TTS VIDEO").toUpperCase(), 96, 70);
 
   ctx.textAlign = "right";
-  ctx.fillStyle = "rgba(244,241,234,0.72)";
+  ctx.fillStyle = muted;
   ctx.fillText(`${String(index + 1).padStart(2, "0")} / ${String(scenes.length).padStart(2, "0")}`, width - 96, 70);
 
   drawCanvasTitle(ctx, scene);
 
   if (scene.layout === "hero") {
-    ctx.strokeStyle = "rgba(232,139,97,0.45)";
+    ctx.strokeStyle = colorWithAlpha(accent, 0.45);
     ctx.lineWidth = 3;
     ctx.beginPath();
     ctx.ellipse(960, 560, 520, 210, sceneProgress * 0.2, 0, Math.PI * 2);
@@ -2181,7 +2302,7 @@ function drawSceneCanvas(ctx, scene, index, sceneProgress, totalProgress) {
     ctx.ellipse(960, 560, 360, 132, -sceneProgress * 0.3, 0, Math.PI * 2);
     ctx.stroke();
     drawTextBlock(ctx, scene.subtitle || currentManifest.subtitle, 960, 680, 1040, 36, {
-      color: "rgba(244,241,234,0.74)",
+      color: muted,
       weight: 760,
     });
   } else if (scene.layout === "compare") {
@@ -2193,12 +2314,12 @@ function drawSceneCanvas(ctx, scene, index, sceneProgress, totalProgress) {
         470,
         580,
         310,
-        i === 1 ? "rgba(232,139,97,0.62)" : "rgba(255,255,255,0.14)",
-        i === 1 ? "rgba(232,139,97,0.12)" : "rgba(255,255,255,0.045)",
+        i === 1 ? theme.accentStroke : theme.panelStroke,
+        i === 1 ? theme.accentFill : theme.panelFill,
       );
-      drawTextBlock(ctx, panel.title, x + 290, 505, 450, 38, { color: i === 1 ? gold : "#f4f1ea", weight: 900 });
+      drawTextBlock(ctx, panel.title, x + 290, 505, 450, 38, { color: i === 1 ? gold : ink, weight: 900 });
       (panel.lines || []).slice(0, 3).forEach((line, j) => {
-        drawTextBlock(ctx, line, x + 290, 585 + j * 54, 440, 30, { color: "rgba(244,241,234,0.76)", weight: 760 });
+        drawTextBlock(ctx, line, x + 290, 585 + j * 54, 440, 30, { color: softText, weight: 760 });
       });
     });
   } else if (scene.layout === "spec" || scene.layout === "metrics") {
@@ -2211,39 +2332,39 @@ function drawSceneCanvas(ctx, scene, index, sceneProgress, totalProgress) {
         515,
         320,
         230,
-        i === 1 ? "rgba(138,216,158,0.58)" : "rgba(255,255,255,0.14)",
-        i === 1 ? "rgba(138,216,158,0.08)" : "rgba(255,255,255,0.045)",
+        i === 1 ? theme.greenStroke : theme.panelStroke,
+        i === 1 ? theme.greenFill : theme.panelFill,
       );
-      drawTextBlock(ctx, label, x + 160, 550, 250, 24, { color: "rgba(244,241,234,0.58)", weight: 850 });
-      drawTextBlock(ctx, value, x + 160, 620, 270, 48, { color: i === 1 ? green : "#f4f1ea", weight: 920 });
+      drawTextBlock(ctx, label, x + 160, 550, 250, 24, { color: faintText, weight: 850 });
+      drawTextBlock(ctx, value, x + 160, 620, 270, 48, { color: i === 1 ? green : ink, weight: 920 });
     });
   } else if (scene.layout === "cards" || scene.layout === "clean") {
     const items = scene.layout === "cards" ? scene.cards : scene.frames;
     (items || []).slice(0, 3).forEach((item, i) => {
       const x = 310 + i * 430;
-      fillCard(ctx, x, 500, 360, 270, "rgba(143,183,255,0.34)", "rgba(143,183,255,0.07)");
+      fillCard(ctx, x, 500, 360, 270, theme.coolStroke, theme.coolFill);
       const icon = Array.isArray(item) ? item[0] : String(i + 1);
       const head = Array.isArray(item) ? item[1] : "point";
       const body = Array.isArray(item) ? item[2] : "";
       drawTextBlock(ctx, icon, x + 180, 530, 260, 42, { color: accent, weight: 950 });
       drawTextBlock(ctx, head, x + 180, 600, 280, 34, { color: gold, weight: 900 });
-      drawTextBlock(ctx, body, x + 180, 670, 280, 27, { color: "rgba(244,241,234,0.76)", weight: 760 });
+      drawTextBlock(ctx, body, x + 180, 670, 280, 27, { color: softText, weight: 760 });
     });
   } else if (scene.layout === "sources") {
     const sourceItems = normalizeSourceItems(scene.sources);
     sourceItems.slice(0, 5).forEach((source, i) => {
       const y = 450 + i * 86;
-      fillCard(ctx, 285, y, 1350, 64, "rgba(143,183,255,0.24)", "rgba(255,255,255,0.045)");
+      fillCard(ctx, 285, y, 1350, 64, colorWithAlpha(cool, 0.24), theme.panelFill);
       drawTextBlock(ctx, String(i + 1), 340, y + 16, 60, 30, { color: gold, weight: 950 });
       ctx.textAlign = "left";
       ctx.font = canvasFont(27, 840);
-      ctx.fillStyle = "#f4f1ea";
+      ctx.fillStyle = ink;
       wrapCanvasText(ctx, source.title, 850)
         .slice(0, 1)
         .forEach((line) => ctx.fillText(line, 410, y + 17));
       ctx.textAlign = "right";
       ctx.font = canvasFont(24, 780);
-      ctx.fillStyle = "rgba(244,241,234,0.58)";
+      ctx.fillStyle = faintText;
       ctx.fillText(source.host, 1580, y + 20);
     });
   } else if (scene.layout === "flow" || scene.layout === "pipeline" || scene.layout === "final") {
@@ -2257,15 +2378,15 @@ function drawSceneCanvas(ctx, scene, index, sceneProgress, totalProgress) {
         560,
         250,
         120,
-        active ? "rgba(232,139,97,0.62)" : "rgba(255,255,255,0.14)",
-        active ? "rgba(232,139,97,0.12)" : "rgba(255,255,255,0.045)",
+        active ? theme.accentStroke : theme.panelStroke,
+        active ? theme.accentFill : theme.panelFill,
       );
       drawTextBlock(ctx, item, x + 125, 595, 190, 29, {
-        color: active ? "#f4f1ea" : "rgba(244,241,234,0.7)",
+        color: active ? ink : muted,
         weight: 880,
       });
       if (i < 4) {
-        ctx.strokeStyle = "rgba(232,139,97,0.6)";
+        ctx.strokeStyle = colorWithAlpha(accent, 0.6);
         ctx.lineWidth = 3;
         ctx.beginPath();
         ctx.moveTo(x + 260, 620);
@@ -2275,21 +2396,21 @@ function drawSceneCanvas(ctx, scene, index, sceneProgress, totalProgress) {
     });
     if (scene.layout === "final") drawTextBlock(ctx, scene.stamp, 960, 760, 900, 50, { color: accent, weight: 950 });
   } else if (scene.layout === "code") {
-    fillCard(ctx, 440, 480, 1040, 340, "rgba(143,183,255,0.32)", "rgba(10,14,20,0.88)");
+    fillCard(ctx, 440, 480, 1040, 340, colorWithAlpha(cool, 0.32), theme.codeFill);
     ctx.textAlign = "left";
     (scene.code || []).slice(0, 6).forEach((line, i) => {
-      ctx.fillStyle = i === 0 ? gold : "#cfe0ff";
+      ctx.fillStyle = i === 0 ? gold : theme.codeText;
       ctx.font = canvasFont(32, 760);
       ctx.fillText(String(line), 510, 530 + i * 48);
     });
   } else if (scene.layout === "qa") {
-    fillCard(ctx, 430, 475, 1060, 350, "rgba(255,255,255,0.16)", "rgba(255,255,255,0.045)");
+    fillCard(ctx, 430, 475, 1060, 350, theme.panelStroke, theme.panelFill);
     (scene.rows || []).slice(0, 3).forEach(([check, result], i) => {
-      drawTextBlock(ctx, check, 700, 535 + i * 86, 420, 32, { color: "rgba(244,241,234,0.78)", weight: 820 });
+      drawTextBlock(ctx, check, 700, 535 + i * 86, 420, 32, { color: softText, weight: 820 });
       drawTextBlock(ctx, result, 1210, 535 + i * 86, 420, 32, { color: green, weight: 880 });
     });
   } else if (scene.layout === "spectrum") {
-    drawTextBlock(ctx, scene.decision, 960, 530, 960, 40, { color: "#f4f1ea", weight: 850 });
+    drawTextBlock(ctx, scene.decision, 960, 530, 960, 40, { color: ink, weight: 850 });
     const gradient = ctx.createLinearGradient(460, 670, 1460, 670);
     gradient.addColorStop(0, green);
     gradient.addColorStop(0.5, gold);
@@ -2298,15 +2419,15 @@ function drawSceneCanvas(ctx, scene, index, sceneProgress, totalProgress) {
     ctx.fillStyle = gradient;
     ctx.fill();
   } else if (scene.layout === "render") {
-    fillCard(ctx, 360, 500, 650, 300, "rgba(143,183,255,0.34)", "rgba(143,183,255,0.08)");
-    fillCard(ctx, 1060, 550, 360, 250, "rgba(138,216,158,0.34)", "rgba(138,216,158,0.08)");
+    fillCard(ctx, 360, 500, 650, 300, theme.coolStroke, theme.coolFill);
+    fillCard(ctx, 1060, 550, 360, 250, colorWithAlpha(green, 0.34), theme.greenFill);
     drawTextBlock(ctx, "1920 x 1080", 685, 625, 420, 46, { color: cool, weight: 930 });
     drawTextBlock(ctx, "16:9", 1240, 650, 260, 46, { color: green, weight: 930 });
   } else {
-    drawTextBlock(ctx, scene.caption, 960, 570, 1000, 38, { color: "rgba(244,241,234,0.78)", weight: 800 });
+    drawTextBlock(ctx, scene.caption, 960, 570, 1000, 38, { color: softText, weight: 800 });
   }
 
-  ctx.fillStyle = "rgba(255,255,255,0.14)";
+  ctx.fillStyle = theme.progressTrack;
   ctx.fillRect(96, height - 70, width - 192, 6);
   const progress = Math.max(0, Math.min(1, totalProgress));
   const pg = ctx.createLinearGradient(96, 0, width - 96, 0);
@@ -2558,6 +2679,10 @@ async function changeTtsProvider(provider) {
 styleSelect?.addEventListener("change", () => {
   appShell.dataset.template = styleSelect.value || "explainer";
   invalidateBrief();
+});
+
+visualThemeSelect?.addEventListener("change", () => {
+  applyVisualTheme(visualThemeSelect.value);
 });
 
 topicInput?.addEventListener("input", invalidateBrief);
