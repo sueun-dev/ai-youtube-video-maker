@@ -177,7 +177,7 @@ Sources:
 {source_text}
 {critique_rule}
 
-Return this compact JSON shape. Omit fields that are not listed here; the renderer fills layout-specific defaults:
+Return this compact JSON shape. The renderer rejects generic placeholders and can only synthesize small visual micro-fields from your own scene claim, title, and speech, so every scene must be specific and dense:
 {{
   "title": "short Korean video title",
   "subtitle": "short Korean subtitle",
@@ -188,7 +188,7 @@ Return this compact JSON shape. Omit fields that are not listed here; the render
     {{
       "duration": 10,
       "layout": "hero | compare | spec | cards | flow | clock | metrics | code | pipeline | qa | spectrum | clean | render | final | sources",
-      "kicker": "short uppercase label when useful",
+      "kicker": "short topic-specific label for hero",
       "title": "short Korean screen title",
       "mark": "one exact substring from title to highlight",
       "subtitle": "only for hero",
@@ -204,15 +204,18 @@ Return this compact JSON shape. Omit fields that are not listed here; the render
         "pause": "short pause guidance for this page",
         "instruction": "one short English TTS direction for gpt-realtime-2"
       }},
-      "stamp": "short uppercase closing stamp",
+      "stamp": "short topic-specific closing stamp",
       "sources": [{{"title":"source title","url":"https://...","host":"example.com"}}]
     }}
   ]
 }}
 
+Optional layout visual fields: compare panels, spec/metrics pairs, cards, flow nodes, clock clock/note, code lines, pipeline steps, qa rows, spectrum decision/scale, clean/render frames, final route/stamp. Include them only when they help; every value must be topic-specific. Never use production/system placeholders.
+
 Rules:
-- Use only the fields needed by each layout, but every scene must include duration, layout, title, mark, caption, speech.
-- Keep the JSON compact. Do not output panels, specs, cards, nodes, metrics, code, steps, rows, frames, or route unless one of those fields is essential to a specific scene.
+- Use only the visual field group for the selected layout when you include visual fields; make each value content-specific.
+- Every scene must include duration, layout, title, mark, caption, claim, evidenceRefs when sources exist, speech, and delivery. These core fields cannot be generic or missing.
+- Do not use renderer/system production language as visual content: no "audio duration", "scene transition", "scene json", "voice wav", "video export", "desktop 16:9", "tablet crop", "mobile stack", "10s", "300s", "5 min", "SOURCE BACKED", or generic "DOCUMENTARY" labels.
 - Every non-source scene should include claim and evidenceRefs. Use source IDs like S1 and S2 from the source list.
 - Do not use weak sources for central claims. If a claim has only weak support, phrase it cautiously or remove it.
 - The first scene must be hero.

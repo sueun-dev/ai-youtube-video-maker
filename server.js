@@ -21,7 +21,7 @@ const allowTemplateFallback = process.env.ALLOW_TEMPLATE_FALLBACK === "1";
 const manifestReasoningEfforts = (
   process.env.OPENAI_MANIFEST_REASONING_EFFORTS ||
   process.env.OPENAI_MANIFEST_REASONING_EFFORT ||
-  "low,medium"
+  "low"
 )
   .split(",")
   .map((item) => item.trim())
@@ -1122,6 +1122,7 @@ const genericVisualTextPatterns = [
   /scene json/i,
   /voice wav/i,
   /video export/i,
+  /source backed/i,
   /desktop 16:9/i,
   /tablet crop/i,
   /mobile stack/i,
@@ -1134,10 +1135,21 @@ const genericVisualTextPatterns = [
   /^voice$/i,
   /^fixed$/i,
   /^one$/i,
+  /^before$/i,
+  /^after$/i,
+  /^point$/i,
+  /^label$/i,
+  /^value$/i,
+  /^step$/i,
+  /^main point$/i,
   /^10s$/i,
   /^300s$/i,
   /^5 min$/i,
   /^16:9$/i,
+  /^documentary$/i,
+  /^검증된 출처$/,
+  /^다음 질문$/,
+  /^범위를 나눠 본다$/,
 ];
 
 const visualTokenStopwords = new Set([
@@ -1181,6 +1193,27 @@ function isGenericVisualText(value) {
   const text = String(value || "").trim();
   if (!text) return false;
   return genericVisualTextPatterns.some((pattern) => pattern.test(text));
+}
+
+function flattenStrings(value) {
+  if (typeof value === "string" || typeof value === "number") return [String(value)];
+  if (Array.isArray(value)) return value.flatMap((item) => flattenStrings(item));
+  if (value && typeof value === "object") return Object.values(value).flatMap((item) => flattenStrings(item));
+  return [];
+}
+
+function hasGenericVisualValue(value) {
+  return flattenStrings(value).some((item) => isGenericVisualText(item));
+}
+
+function isStructuralRepeatText(value) {
+  const text = stripHtml(value);
+  return (
+    /^(겉으로 보이는 점|실제로 봐야 할 점|핵심|근거|의미|주장|다음)$/.test(text) ||
+    /^S\d+\s/.test(text) ||
+    /\b[a-z0-9-]+\.(org|com|io|net|kr|dev)\b/i.test(text) ||
+    /에서 확인한 범위 안에서 설명한다/.test(text)
+  );
 }
 
 function contentPhrasesFrom(value, max = 6) {
@@ -1248,7 +1281,7 @@ function visualFallbacksFor(scene, topic, sources, index, sceneCount) {
   const context = sceneVisualContext(scene, topic, sources);
   const [first, second, third, fourth, fifth] = context.terms;
   const [p1, p2, p3, p4] = context.phrases;
-  const source = context.sourceLabel || "검증된 출처";
+  const source = context.sourceLabel || `${context.topicLabel} 맥락`;
   return {
     panels: [
       { title: "겉으로 보이는 점", lines: [first, p1, source], tone: "muted" },
@@ -1291,15 +1324,43 @@ function visualFallbacksFor(scene, topic, sources, index, sceneCount) {
       ["다음", clipText(p2 || scene.caption, scene.title, 34)],
     ],
     decision: clipText(scene.claim || p1 || scene.speech, scene.title, 96),
+    stamp: clipText(`${first || context.topicLabel} ${index >= sceneCount - 2 ? "결론" : "확인"}`, context.topicLabel, 32),
     frames: [
       ["핵심", clipText(first, context.topicLabel, 36)],
-      ["근거", clipText(source, "검증된 출처", 36)],
+      ["근거", clipText(source, context.topicLabel, 36)],
       ["의미", clipText(p2 || p1, scene.title, 48)],
     ],
-    route: [context.topicLabel, first, second, third, index >= sceneCount - 2 ? "결론" : "다음 질문"]
+    route: [context.topicLabel, first, second, third, index >= sceneCount - 2 ? `${context.topicLabel} 결론` : "다음 판단"]
       .filter(Boolean)
       .slice(0, 5),
   };
+}
+
+function visualFieldsForLayout(layout, visualFallbacks) {
+  if (layout === "hero") {
+    return {
+      kicker: visualFallbacks.primary,
+      subtitle: visualFallbacks.note,
+    };
+  }
+  if (layout === "compare") return { panels: visualFallbacks.panels };
+  if (layout === "spec") return { specs: visualFallbacks.specs };
+  if (layout === "cards") return { cards: visualFallbacks.cards };
+  if (layout === "flow") return { nodes: visualFallbacks.nodes, activeNode: Math.min(2, visualFallbacks.nodes.length - 1) };
+  if (layout === "clock") return { clock: visualFallbacks.clock, note: visualFallbacks.note };
+  if (layout === "metrics") return { metrics: visualFallbacks.metrics };
+  if (layout === "code") return { code: visualFallbacks.code };
+  if (layout === "pipeline") return { steps: visualFallbacks.steps };
+  if (layout === "qa") return { rows: visualFallbacks.rows };
+  if (layout === "spectrum") {
+    return {
+      decision: visualFallbacks.decision,
+      scale: [visualFallbacks.nodes[0] || visualFallbacks.clock, visualFallbacks.nodes[1] || visualFallbacks.stamp],
+    };
+  }
+  if (layout === "clean" || layout === "render") return { frames: visualFallbacks.frames };
+  if (layout === "final") return { route: visualFallbacks.route, stamp: visualFallbacks.stamp };
+  return {};
 }
 
 function normalizePanelList(value, fallbackPanels) {
@@ -1307,13 +1368,13 @@ function normalizePanelList(value, fallbackPanels) {
     return fallbackPanels;
   }
   return value.slice(0, 2).map((panel, index) => ({
-    title: clipText(panel?.title, index === 0 ? "Before" : "After", 36),
+    title: clipText(panel?.title, fallbackPanels[index]?.title || `관점 ${index + 1}`, 36),
     lines: Array.isArray(panel?.lines)
       ? panel.lines
           .filter((line) => !isGenericVisualText(line))
           .slice(0, 3)
-          .map((line) => clipText(line, "point", 34))
-      : ["point", "point", "point"],
+          .map((line, lineIndex) => clipText(line, fallbackPanels[index]?.lines?.[lineIndex] || "", 34))
+      : fallbackPanels[index]?.lines || fallbackPanels[0]?.lines || [],
     tone: panel?.tone === "hot" || index === 1 ? "hot" : "muted",
   }));
 }
@@ -1322,7 +1383,14 @@ function normalizeCards(value, fallbackCards) {
   const cards = Array.isArray(value)
     ? value
         .filter((item) => Array.isArray(item) && item.length >= 3)
-        .map((item) => [clipText(item[0], "A", 8), clipText(item[1], "핵심", 28), clipText(item[2], "", 48)])
+        .map((item, index) => {
+          const fallback = fallbackCards[index] || fallbackCards[0] || ["", "", ""];
+          return [
+            clipText(item[0], fallback[0], 8),
+            clipText(item[1], fallback[1], 28),
+            clipText(item[2], fallback[2], 48),
+          ];
+        })
         .filter((item) => item.some((part) => !isGenericVisualText(part)))
     : [];
   return cards.length ? cards.slice(0, 3) : fallbackCards;
@@ -1462,6 +1530,210 @@ function normalizeEvidenceRefs(value, sources, index, layout) {
   return [sourceIds[index % sourceIds.length]];
 }
 
+function usefulText(value, minLength = 2) {
+  const text = stripHtml(value).trim();
+  return text.length >= minLength && !isGenericVisualText(text);
+}
+
+function usefulStringList(value, minCount = 3) {
+  if (!Array.isArray(value)) return false;
+  const usable = value.filter((item) => usefulText(item, 2));
+  return usable.length >= minCount;
+}
+
+function usefulPairList(value, minCount = 3) {
+  if (!Array.isArray(value)) return false;
+  const usable = value.filter(
+    (item) => Array.isArray(item) && item.length >= 2 && usefulText(item[0], 1) && usefulText(item[1], 2),
+  );
+  return usable.length >= minCount;
+}
+
+function usefulCards(value) {
+  if (!Array.isArray(value)) return false;
+  const usable = value.filter(
+    (item) =>
+      Array.isArray(item) && item.length >= 3 && usefulText(item[0], 1) && usefulText(item[1], 2) && usefulText(item[2], 3),
+  );
+  return usable.length >= 3;
+}
+
+function usefulPanels(value) {
+  if (!Array.isArray(value) || value.length < 2) return false;
+  return value.slice(0, 2).every(
+    (panel) =>
+      panel &&
+      usefulText(panel.title, 2) &&
+      Array.isArray(panel.lines) &&
+      panel.lines.filter((line) => usefulText(line, 2)).length >= 2,
+  );
+}
+
+function usefulEvidenceRefs(value, sources) {
+  if (!Array.isArray(sources) || !sources.length) return true;
+  if (!Array.isArray(value) || !value.length) return false;
+  const sourceIds = new Set(sources.map((source, sourceIndex) => source.id || `S${sourceIndex + 1}`));
+  return value.some((item) => {
+    const ref =
+      typeof item === "number"
+        ? `S${item}`
+        : typeof item === "string"
+          ? item.trim().toUpperCase().replace(/^(\d+)$/, "S$1")
+          : item?.id || item?.sourceId || "";
+    return sourceIds.has(String(ref).trim().toUpperCase());
+  });
+}
+
+const layoutVisualValidators = {
+  hero: {
+    kicker: (value) => usefulText(value, 2),
+    subtitle: (value) => usefulText(value, 6),
+  },
+  compare: {
+    panels: usefulPanels,
+  },
+  spec: {
+    specs: (value) => usefulPairList(value, 4),
+  },
+  cards: {
+    cards: usefulCards,
+  },
+  flow: {
+    nodes: (value) => usefulStringList(value, 4),
+  },
+  clock: {
+    clock: (value) => usefulText(value, 2),
+    note: (value) => usefulText(value, 8),
+  },
+  metrics: {
+    metrics: (value) => usefulPairList(value, 4),
+  },
+  code: {
+    code: (value) => usefulStringList(value, 4),
+  },
+  pipeline: {
+    steps: (value) => usefulStringList(value, 4),
+  },
+  qa: {
+    rows: (value) => usefulPairList(value, 3),
+  },
+  spectrum: {
+    decision: (value) => usefulText(value, 10),
+    scale: (value) => usefulStringList(value, 2),
+  },
+  clean: {
+    frames: (value) => usefulPairList(value, 3),
+  },
+  render: {
+    frames: (value) => usefulPairList(value, 3),
+  },
+  final: {
+    route: (value) => usefulStringList(value, 4),
+    stamp: (value) => usefulText(value, 3),
+  },
+  sources: {
+    sources: (value) => Array.isArray(value) && value.length > 0,
+  },
+};
+
+function mergeGenerationAudit(existing, next) {
+  return {
+    repairedFields: [
+      ...new Set([...(existing?.repairedFields || []), ...(next?.repairedFields || [])].filter(Boolean)),
+    ],
+    genericFields: [...new Set([...(existing?.genericFields || []), ...(next?.genericFields || [])].filter(Boolean))],
+  };
+}
+
+function generationAuditForScene(raw, layout, sources) {
+  const audit = { repairedFields: [], genericFields: [] };
+  const requireField = (field, validator) => {
+    const value = raw?.[field];
+    if (!validator(value)) audit.repairedFields.push(field);
+    if (hasGenericVisualValue(value)) audit.genericFields.push(field);
+  };
+
+  if (layout === "sources") {
+    return mergeGenerationAudit(raw?.generationAudit, audit);
+  }
+
+  requireField("layout", (value) => value === layout);
+  requireField("title", (value) => usefulText(value, 4));
+  requireField("mark", (value) => usefulText(value, 1));
+  requireField("caption", (value) => usefulText(value, 4));
+  requireField("claim", (value) => usefulText(value, 8));
+  requireField("speech", (value) => usefulText(value, 45));
+  requireField(
+    "delivery",
+    (value) =>
+      value &&
+      typeof value === "object" &&
+      usefulText(value.role, 3) &&
+      usefulText(value.tone, 4) &&
+      usefulText(value.pace, 4) &&
+      usefulText(value.energy, 4) &&
+      usefulText(value.pause, 8) &&
+      usefulText(value.instruction, 16),
+  );
+  if (Array.isArray(sources) && sources.length) {
+    requireField("evidenceRefs", (value) => usefulEvidenceRefs(value, sources));
+  }
+
+  for (const [field, validator] of Object.entries(layoutVisualValidators[layout] || {})) {
+    requireField(field, validator);
+  }
+
+  return mergeGenerationAudit(raw?.generationAudit, audit);
+}
+
+function sceneVisualQualitySummary(scenes) {
+  const criticalGeneratedFields = new Set(["title", "caption", "claim", "speech", "delivery", "evidenceRefs"]);
+  const repairedFields = [];
+  const criticalRepairedFields = [];
+  const missingVisualFields = [];
+  const genericVisualFields = [];
+  const duplicateVisualValues = [];
+  const seenVisualValues = new Map();
+
+  scenes.forEach((scene, index) => {
+    const sceneLabel = `scene ${index + 1} ${scene.layout || "scene"}`;
+    const audit = scene.generationAudit || {};
+    if (audit.repairedFields?.length) {
+      repairedFields.push(`${sceneLabel}: ${audit.repairedFields.slice(0, 8).join(", ")}`);
+      const critical = audit.repairedFields.filter((field) => criticalGeneratedFields.has(field));
+      if (critical.length) criticalRepairedFields.push(`${sceneLabel}: ${critical.join(", ")}`);
+    }
+    if (audit.genericFields?.length) {
+      genericVisualFields.push(`${sceneLabel}: ${audit.genericFields.slice(0, 8).join(", ")}`);
+    }
+
+    for (const [field, validator] of Object.entries(layoutVisualValidators[scene.layout] || {})) {
+      const value = scene[field];
+      if (!validator(value)) missingVisualFields.push(`${sceneLabel}: ${field}`);
+      if (hasGenericVisualValue(value)) genericVisualFields.push(`${sceneLabel}: ${field}`);
+      for (const text of flattenStrings(value)) {
+        if (isStructuralRepeatText(text)) continue;
+        const compact = normalizeKeywordText(text).replace(/\s+/g, "");
+        if (compact.length < 6 || isGenericVisualText(compact)) continue;
+        const previous = seenVisualValues.get(compact);
+        if (previous !== undefined && previous !== index) {
+          duplicateVisualValues.push(`${sceneLabel}: repeated "${clipText(text, "", 28)}"`);
+          break;
+        }
+        seenVisualValues.set(compact, index);
+      }
+    }
+  });
+
+  return {
+    repairedFields: repairedFields.slice(0, 12),
+    criticalRepairedFields: criticalRepairedFields.slice(0, 12),
+    missingVisualFields: missingVisualFields.slice(0, 12),
+    genericVisualFields: [...new Set(genericVisualFields)].slice(0, 12),
+    duplicateVisualValues: duplicateVisualValues.slice(0, 12),
+  };
+}
+
 function normalizeScene(raw, index, sceneCount, topic, options = {}) {
   const layouts = [
     "hero",
@@ -1487,6 +1759,7 @@ function normalizeScene(raw, index, sceneCount, topic, options = {}) {
   else if (index === options.finalIndex || (index === sceneCount - 1 && options.sourceIndex !== index))
     layout = "final";
 
+  const generationAudit = generationAuditForScene(raw, layout, options.sources || []);
   const title = clipText(raw?.title, index === 0 ? `${topic} 한 번에 보기` : `${topic} 핵심 ${index + 1}`, 72);
   const markCandidate = clipText(raw?.mark, title.split(/\s+/)[0] || topic.slice(0, 8), 24);
   const mark = title.includes(markCandidate) ? markCandidate : title.split(/\s+/)[0] || markCandidate;
@@ -1509,7 +1782,11 @@ function normalizeScene(raw, index, sceneCount, topic, options = {}) {
   const visualFallbacks = visualFallbacksFor(scene, topic, options.sources || [], index, sceneCount);
 
   if (layout === "hero") {
-    scene.kicker = clipText(isGenericVisualText(raw?.kicker) ? "" : raw?.kicker, "DOCUMENTARY", 32).toUpperCase();
+    scene.kicker = clipText(
+      isGenericVisualText(raw?.kicker) ? "" : raw?.kicker,
+      visualFallbacks.primary || shortTopicLabel(topic),
+      32,
+    ).toUpperCase();
     scene.subtitle = clipText(
       isGenericVisualText(raw?.subtitle) ? "" : raw?.subtitle,
       visualFallbacks.note || "핵심 흐름을 근거와 함께 따라간다",
@@ -1556,10 +1833,13 @@ function normalizeScene(raw, index, sceneCount, topic, options = {}) {
   }
   if (layout === "final") {
     scene.route = normalizeStringList(raw?.route, visualFallbacks.route);
-    scene.stamp = clipText(isGenericVisualText(raw?.stamp) ? "" : raw?.stamp, "SOURCE BACKED", 32).toUpperCase();
+    scene.stamp = clipText(isGenericVisualText(raw?.stamp) ? "" : raw?.stamp, visualFallbacks.stamp, 32).toUpperCase();
   }
   if (layout === "sources") {
     scene.sources = Array.isArray(raw?.sources) ? raw.sources.slice(0, 5) : [];
+  }
+  if (generationAudit.repairedFields.length || generationAudit.genericFields.length) {
+    scene.generationAudit = generationAudit;
   }
   return scene;
 }
@@ -1830,6 +2110,27 @@ function scoreManifest(manifest, research) {
       genericNarrationScenes += 1;
     }
   }
+
+  const visualQuality = sceneVisualQualitySummary(scenes);
+  if (visualQuality.criticalRepairedFields.length) {
+    score -= Math.min(42, visualQuality.criticalRepairedFields.length * 10);
+    issues.push(
+      `Core generated fields are missing: ${visualQuality.criticalRepairedFields.slice(0, 3).join(" | ")}.`,
+    );
+  }
+  if (visualQuality.missingVisualFields.length) {
+    score -= Math.min(36, visualQuality.missingVisualFields.length * 8);
+    issues.push(`Layout visual fields are missing: ${visualQuality.missingVisualFields.slice(0, 3).join(" | ")}.`);
+  }
+  if (visualQuality.genericVisualFields.length) {
+    score -= Math.min(32, visualQuality.genericVisualFields.length * 8);
+    issues.push(`Generic/default visual fields remain: ${visualQuality.genericVisualFields.slice(0, 3).join(" | ")}.`);
+  }
+  if (visualQuality.duplicateVisualValues.length > 4) {
+    score -= Math.min(12, visualQuality.duplicateVisualValues.length * 2);
+    issues.push(`Repeated visual values are too common: ${visualQuality.duplicateVisualValues.slice(0, 3).join(" | ")}.`);
+  }
+
   if (missingEvidenceRefs) {
     score -= Math.min(18, missingEvidenceRefs * 2);
     issues.push(`Scene evidence references missing: ${missingEvidenceRefs}.`);
@@ -1892,9 +2193,13 @@ function scoreManifest(manifest, research) {
     passed:
       score >= 82 &&
       (!sourceRequired || (sourceCount > 0 && sourceQuality.average >= 52 && missingEvidenceRefs === 0)) &&
-      adjacentRepeats === 0,
+      adjacentRepeats === 0 &&
+      visualQuality.criticalRepairedFields.length === 0 &&
+      visualQuality.missingVisualFields.length === 0 &&
+      visualQuality.genericVisualFields.length === 0,
     issues: issues.slice(0, 8),
     sourceQuality,
+    visualQuality,
     topicAlignment: {
       keywords: alignment.keywords.slice(0, 8),
       bodyRatio: Math.round(alignment.bodyRatio * 100) / 100,
@@ -2089,19 +2394,61 @@ function fallbackManifest(topic, sceneCount = 30, style = "explainer", research 
     ["clock", "전환 전에는 다음 질문을 만든다", "다음 질문"],
   ];
   const basePlan = planByType[topicType] || defaultPlan;
-  const plan = Array.from({ length: Math.max(1, sceneCount - 1) }, (_, index) => basePlan[index % basePlan.length]);
+  const variantTerms = topicKeywords(topic);
+  const heroPlan = basePlan.find(([layout]) => layout === "hero") || ["hero", `${topicLabel}: 왜 지금 중요한가`, "왜 지금"];
+  const nonHeroPlan = basePlan.filter(([layout]) => layout !== "hero");
+  const plan = Array.from({ length: Math.max(1, sceneCount - 1) }, (_, index) =>
+    index === 0 ? heroPlan : nonHeroPlan[(index - 1) % nonHeroPlan.length],
+  );
   plan[sceneCount - 2] = ["final", `${topicLabel}의 결론`, "결론"];
   const scenes = Array.from({ length: sceneCount }, (_, index) => {
-    const [layout, title, mark] =
+    const [layout, baseTitle, baseMark] =
       index === sceneCount - 1 ? ["final", `${topicLabel}의 결론`, "결론"] : plan[index % plan.length];
+    const variant = variantTerms[index % variantTerms.length] || `관점 ${index + 1}`;
+    const title =
+      index > 0 && index < sceneCount - 2 && !normalizeKeywordText(baseTitle).includes(normalizeKeywordText(topicLabel))
+        ? clipText(`${topicLabel} ${String(index + 1).padStart(2, "0")} ${variant}: ${baseTitle}`, baseTitle, 72)
+        : baseTitle;
+    const titleTerms = contentTermsFrom(`${title} ${topic}`, 6).filter((term) => title.includes(term));
+    const mark =
+      !isGenericVisualText(baseMark) && title.includes(baseMark)
+        ? baseMark
+        : titleTerms[0] || title.split(/\s+/)[0] || topicLabel;
     const source = sourceHintAt(sourceList, index);
+    const sourceIds = sourceList.map((item, sourceIndex) => item.id || `S${sourceIndex + 1}`);
+    const refs = sourceIds.length
+      ? index >= sceneCount - 2
+        ? sourceIds.slice(0, Math.min(2, sourceIds.length))
+        : [sourceIds[index % sourceIds.length]]
+      : [];
+    const speech = fallbackSpeech(topicLabel, title, source, index, hasSources, topicType);
+    const role = deliveryRoleFor(layout, index);
+    const delivery = normalizeDelivery({ role, ...(deliveryProfiles[role] || deliveryProfiles.context) }, layout, index, sceneCount, style);
+    const claim = clipText(
+      source
+        ? `${title}는 ${source.host || "확인 가능한 자료"}에서 확인한 범위 안에서 설명한다.`
+        : `${title}는 ${topicLabel}${josa(topicLabel, "을", "를")} 이해하기 위한 핵심 단계다.`,
+      title,
+      150,
+    );
+    const rawScene = {
+      layout,
+      title,
+      mark,
+      caption: `${title}.`,
+      claim,
+      evidenceRefs: refs,
+      speech,
+      delivery,
+    };
+    const visualFields = visualFieldsForLayout(
+      layout,
+      visualFallbacksFor({ ...rawScene, duration: 10 }, topic, sourceList, index, sceneCount),
+    );
     return normalizeScene(
       {
-        layout,
-        title,
-        mark,
-        caption: `${title}.`,
-        speech: fallbackSpeech(topicLabel, title, source, index, hasSources, topicType),
+        ...rawScene,
+        ...visualFields,
       },
       index,
       sceneCount,
@@ -2110,7 +2457,7 @@ function fallbackManifest(topic, sceneCount = 30, style = "explainer", research 
     );
   });
   return normalizeManifest(
-    { title: `${topic} 설명 영상`, subtitle: "로컬 템플릿으로 만든 5분 HTML TTS 영상", scenes },
+    { title: `${topic} 설명 영상`, subtitle: "주제와 출처를 기반으로 만든 5분 HTML TTS 영상", scenes },
     topic,
     sceneCount,
     style,
@@ -2191,6 +2538,9 @@ function buildGenerationPrompt({ topic, style, notes, sceneCount, targetSeconds,
     "",
     "Hard rules:",
     "- Show short screen text; put detail in narration.",
+    "- There are no static/default visuals. Every scene must generate its own topic-specific content, narration, and delivery.",
+    "- Optional visual fields by layout: hero=kicker+subtitle; compare=panels; spec=specs; cards=cards; flow=nodes+activeNode; clock=clock+note; metrics=metrics; code=code; pipeline=steps; qa=rows; spectrum=decision+scale; clean/render=frames; final=route+stamp; sources=sources. Include them only when useful; otherwise the renderer derives visual micro-fields only from your scene claim/speech.",
+    '- Never use production/system placeholder text as visual content: "audio duration", "scene json", "voice wav", "video export", "desktop 16:9", "tablet crop", "mobile stack", "10s", "300s", "SOURCE BACKED", or generic "DOCUMENTARY".',
     "- If sources exist, the final scene must be a sources scene and the second-to-last scene must be the conclusion.",
     '- Each non-source scene must include a concrete claim and evidenceRefs like ["S1"] or ["S1", "S2"].',
     "- Do not use weak sources for central claims. Weak/secondary sources can only provide context or wording checks.",
@@ -2309,6 +2659,27 @@ function qualityFailureMessage(quality) {
   return issues.length ? issues.join(" ") : "Quality gate failed.";
 }
 
+function createSourceAwareSynthesis(topic, sceneCount, style, research, warning = "") {
+  const manifest = fallbackManifest(topic, sceneCount, style, research);
+  const quality = { ...scoreManifest(manifest, research), attempts: 0, maxAttempts: 0, reasoningEffort: "local-synthesis" };
+  manifest.quality = quality;
+  const warningText = /429|Too Many Requests/i.test(warning)
+    ? "AI manifest route is rate-limited; source-aware local synthesis was used."
+    : /timed out|timeout/i.test(warning)
+      ? "AI manifest route timed out; source-aware local synthesis was used."
+      : warning
+        ? "AI manifest route failed; source-aware local synthesis was used."
+        : "";
+  return {
+    manifest,
+    response: {
+      ...manifest,
+      route: "source-aware-local-synthesis",
+      warning: warningText,
+    },
+  };
+}
+
 async function createManifest(req, res) {
   let body;
   try {
@@ -2354,7 +2725,7 @@ async function createManifest(req, res) {
           researchHash,
           sourceQuality: sourceQualitySummary(research.sources),
           efforts: manifestReasoningEfforts,
-          helper: "oauth-manifest-v16-scene-specific-visuals",
+          helper: "oauth-manifest-v20-no-generic-panel-labels",
         }),
       )
       .digest("hex");
@@ -2429,7 +2800,8 @@ async function createManifest(req, res) {
         }
       }
       if (!bestManifest && lastGenerationError) throw lastGenerationError;
-      const manifest = bestManifest || fallbackManifest(topic, sceneCount, style, research);
+      if (!bestManifest) throw new Error("AI manifest did not return a usable candidate.");
+      const manifest = bestManifest;
       if (!manifest.quality) manifest.quality = { ...scoreManifest(manifest, research), attempts: 0, maxAttempts };
       if (!manifest.quality.passed) {
         json(
@@ -2451,18 +2823,24 @@ async function createManifest(req, res) {
     } catch (error) {
       if (!allowTemplateFallback) {
         const message = String(error.message || error).slice(0, 500);
-        json(
-          res,
-          /timed out/i.test(message) ? 504 : 502,
-          manifestFailurePayload({
-            error: /timed out/i.test(message)
-              ? "AI manifest generation timed out. No fallback video was rendered."
-              : "AI manifest generation failed. No fallback video was rendered.",
-            route: /timed out/i.test(message) ? "manifest-timeout" : "manifest-generation-failed",
-            warning: message,
-            research,
-          }),
-        );
+        const { manifest, response } = createSourceAwareSynthesis(topic, sceneCount, style, research, message);
+        if (manifest.quality.passed) {
+          json(res, 200, response);
+        } else {
+          json(
+            res,
+            /timed out/i.test(message) ? 504 : 502,
+            manifestFailurePayload({
+              error: /timed out/i.test(message)
+                ? "AI manifest generation timed out and local synthesis failed quality checks."
+                : "AI manifest generation failed and local synthesis failed quality checks.",
+              route: /timed out/i.test(message) ? "manifest-timeout" : "manifest-generation-failed",
+              warning: `${message} ${qualityFailureMessage(manifest.quality)}`,
+              research,
+              manifest,
+            }),
+          );
+        }
         return;
       }
       const manifest = fallbackManifest(topic, sceneCount, style, research);
@@ -2477,16 +2855,28 @@ async function createManifest(req, res) {
   }
 
   if (!allowTemplateFallback) {
-    json(
-      res,
-      503,
-      manifestFailurePayload({
-        error: "AI manifest generator is unavailable. No fallback video was rendered.",
-        route: "manifest-unavailable",
-        warning: "OpenAI OAuth helper is not available in this runtime.",
-        research,
-      }),
+    const { manifest, response } = createSourceAwareSynthesis(
+      topic,
+      sceneCount,
+      style,
+      research,
+      "OpenAI OAuth helper is not available in this runtime.",
     );
+    if (manifest.quality.passed) {
+      json(res, 200, response);
+    } else {
+      json(
+        res,
+        503,
+        manifestFailurePayload({
+          error: "AI manifest generator is unavailable and local synthesis failed quality checks.",
+          route: "manifest-unavailable",
+          warning: qualityFailureMessage(manifest.quality),
+          research,
+          manifest,
+        }),
+      );
+    }
     return;
   }
 

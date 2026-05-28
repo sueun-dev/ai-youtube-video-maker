@@ -516,6 +516,37 @@ button:disabled {
   background: repeating-linear-gradient(180deg, transparent 0 4px, rgba(255, 255, 255, 0.16) 4px 5px);
 }
 
+.empty-stage {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: grid;
+  place-content: center;
+  gap: 0.85rem;
+  padding: clamp(1.5rem, 4vw, 4rem);
+  text-align: center;
+}
+
+.empty-stage[hidden] {
+  display: none;
+}
+
+.empty-stage b {
+  color: var(--ink);
+  font-size: clamp(2rem, 5vw, 5rem);
+  font-weight: 950;
+  line-height: 1;
+}
+
+.empty-stage span {
+  max-width: 34rem;
+  color: var(--muted);
+  font-size: clamp(0.95rem, 1.5vw, 1.3rem);
+  font-weight: 850;
+  line-height: 1.45;
+  word-break: keep-all;
+}
+
 .scene {
   position: absolute;
   inset: 0;
@@ -1697,6 +1728,15 @@ input[type="range"] {
 .script-panel li.active {
   border-color: rgba(232, 139, 97, 0.6);
   background: rgba(232, 139, 97, 0.08);
+}
+
+.script-panel li.script-empty {
+  min-height: 5rem;
+  place-items: center;
+  color: var(--muted);
+  font-weight: 850;
+  text-align: center;
+  cursor: default;
 }
 
 .script-panel time {

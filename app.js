@@ -1,850 +1,4 @@
-const scenes = [
-  {
-    duration: 10,
-    layout: "hero",
-    kicker: "01 / SOURCE",
-    title: "HTML이 영상 소스가 된다",
-    mark: "영상 소스",
-    subtitle: "36 pages · 10 second rhythm · one fixed voice per version",
-    caption: "HTML이 영상 소스가 된다.",
-    speech:
-      "이번 버전은 HTML을 미리보기 창이 아니라 영상 소스로 씁니다. 36개의 페이지가 있고, 각 페이지는 한 문장 단위의 내레이션과 정확히 맞춰집니다.",
-  },
-  {
-    duration: 10,
-    layout: "compare",
-    title: "고정 타이머는 긴 영상에서 깨진다",
-    mark: "고정 타이머",
-    caption: "고정 타이머는 긴 영상에서 깨진다.",
-    panels: [
-      { title: "Timer First", lines: ["8초 고정", "문장 중간 전환", "목소리 바꾸면 틀어짐"], tone: "muted" },
-      { title: "Audio First", lines: ["음성 생성", "실제 길이 측정", "끝난 뒤 전환"], tone: "hot" },
-    ],
-    speech:
-      "먼저 고정 타이머를 버립니다. 6분짜리 영상에서 타이머만 믿으면 말이 잘리거나 화면이 멈춥니다. 여기서는 오디오가 장면 길이를 정합니다.",
-  },
-  {
-    duration: 10,
-    layout: "spec",
-    title: "한 페이지는 하나의 명세를 가진다",
-    mark: "하나의 명세",
-    caption: "한 페이지는 하나의 명세를 가진다.",
-    specs: [
-      ["scene_role", "setup"],
-      ["visual_layout", "spec grid"],
-      ["narration", "one beat"],
-      ["duration", "10 sec"],
-    ],
-    speech:
-      "각 페이지는 그냥 화면 조각이 아닙니다. 역할, 레이아웃, 짧은 화면 문장, 음성 원고, 목표 길이를 함께 가진 작은 제작 명세입니다.",
-  },
-  {
-    duration: 10,
-    layout: "cards",
-    title: "역할을 나누면 흐름이 생긴다",
-    mark: "흐름",
-    caption: "역할을 나누면 흐름이 생긴다.",
-    cards: [
-      ["H", "hook", "무엇을 만들지 바로 제시"],
-      ["M", "mechanism", "작동 순서를 화면으로 분리"],
-      ["Q", "quality", "검수 기준을 숫자로 고정"],
-    ],
-    speech:
-      "36페이지는 무작위로 늘린 게 아닙니다. 도입, 문제, 원리, 실행, 검수, 버전, 마무리로 역할을 나눠서 자연스럽게 넘어가게 합니다.",
-  },
-  {
-    duration: 10,
-    layout: "flow",
-    title: "원고에서 WAV까지 한 방향으로 흐른다",
-    mark: "WAV",
-    caption: "원고에서 WAV까지 한 방향으로 흐른다.",
-    nodes: ["script", "voice", "wav", "decode", "screen"],
-    activeNode: 2,
-    speech:
-      "흐름은 단순합니다. 원고가 들어오고, 고정된 voice로 음성이 만들어지고, WAV 파일이 생기고, 브라우저가 길이를 읽은 뒤 화면을 맞춥니다.",
-  },
-  {
-    duration: 10,
-    layout: "clock",
-    title: "오디오 길이가 페이지 전환을 정한다",
-    mark: "페이지 전환",
-    caption: "오디오 길이가 페이지 전환을 정한다.",
-    clock: "10.0s",
-    note: "decodeAudioData -> duration -> page timeline",
-    speech:
-      "한 페이지는 기본적으로 10초 리듬을 가집니다. 다만 음성이 10초보다 조금 길면 화면은 기다립니다. 말이 끝나기 전에 넘어가지 않습니다.",
-  },
-  {
-    duration: 10,
-    layout: "metrics",
-    title: "6분 영상은 36페이지가 기준이다",
-    mark: "36페이지",
-    caption: "6분 영상은 36페이지가 기준이다.",
-    metrics: [
-      ["pages", "36"],
-      ["rhythm", "10s"],
-      ["runtime", "6m"],
-      ["voice", "fixed"],
-    ],
-    speech:
-      "6분짜리 영상이라면 36페이지가 기준입니다. 사용자는 30초 동안 같은 화면을 보고 싶어 하지 않습니다. 10초마다 정보가 바뀌어야 합니다.",
-  },
-  {
-    duration: 10,
-    layout: "code",
-    title: "프롬프트는 제작 JSON을 출력해야 한다",
-    mark: "제작 JSON",
-    caption: "프롬프트는 제작 JSON을 출력해야 한다.",
-    code: [
-      "{",
-      '"page": 8,',
-      '"layout": "code",',
-      '"speech": "one exact narration beat",',
-      '"duration_floor_seconds": 10',
-      "}",
-    ],
-    speech:
-      "프롬프트도 감상문이 아니라 제작 JSON을 내야 합니다. 페이지 번호, 레이아웃, 화면 문장, 내레이션, 최소 길이가 데이터로 나와야 합니다.",
-  },
-  {
-    duration: 10,
-    layout: "pipeline",
-    title: "검수는 감이 아니라 숫자다",
-    mark: "숫자",
-    caption: "검수는 감이 아니라 숫자다.",
-    steps: ["generate", "decode", "measure", "fail/pass", "sync"],
-    speech:
-      "검수는 느낌으로 하지 않습니다. 서버가 만든 WAV 길이를 실제로 계산하고, 전체 합산이 목표보다 짧으면 그 버전은 실패로 처리합니다.",
-  },
-  {
-    duration: 10,
-    layout: "qa",
-    title: "짧으면 침묵 대신 설명을 늘린다",
-    mark: "설명",
-    caption: "짧으면 침묵 대신 설명을 늘린다.",
-    rows: [
-      ["total < target", "fail build"],
-      ["thin page", "add example"],
-      ["silent gap", "reject"],
-    ],
-    speech:
-      "길이가 부족할 때 빈 시간을 넣으면 안 됩니다. 약한 페이지를 찾아 예시, 실패 조건, 다음 장면과의 연결을 넣어 내용을 늘립니다.",
-  },
-  {
-    duration: 10,
-    layout: "spectrum",
-    title: "목소리는 한 버전 안에서 고정된다",
-    mark: "고정",
-    caption: "목소리는 한 버전 안에서 고정된다.",
-    decision: "한 영상 안에서 voice를 섞지 않는다.",
-    speech:
-      "중요한 규칙은 이것입니다. 한 영상 안에서는 목소리가 하나여야 합니다. cedar 버전이면 36페이지 전체가 cedar로만 재생됩니다.",
-  },
-  {
-    duration: 10,
-    layout: "cards",
-    title: "여러 목소리는 서로 다른 풀버전이다",
-    mark: "풀버전",
-    caption: "여러 목소리는 서로 다른 풀버전이다.",
-    cards: [
-      ["C", "cedar", "같은 36페이지 원고"],
-      ["M", "marin", "같은 화면 흐름"],
-      ["A", "alloy", "별도 URL 버전"],
-    ],
-    speech:
-      "여러 목소리는 한 영상에서 섞는 옵션이 아닙니다. 같은 36페이지 원고를 cedar 버전, marin 버전처럼 따로 만든다는 뜻입니다.",
-  },
-  {
-    duration: 10,
-    layout: "clean",
-    title: "큰 하단 자막은 제거한다",
-    mark: "제거",
-    caption: "큰 하단 자막은 제거한다.",
-    frames: [
-      ["no subtitle slab", "화면 아래를 덮지 않음"],
-      ["small timecode", "진행만 표시"],
-      ["scene content", "정보는 HTML 안에 배치"],
-    ],
-    speech:
-      "하단을 덮던 큰 자막은 제거했습니다. 사용자가 봐야 하는 정보는 페이지 안의 카드, 표, 코드 패널, 흐름도에 들어갑니다.",
-  },
-  {
-    duration: 10,
-    layout: "render",
-    title: "화면은 장면 단위로 검수한다",
-    mark: "검수",
-    caption: "화면은 장면 단위로 검수한다.",
-    speech:
-      "페이지가 많아질수록 렌더 검수가 중요합니다. 텍스트가 프레임 밖으로 나가지 않는지, 카드가 겹치지 않는지, 타임코드가 방해하지 않는지 봅니다.",
-  },
-  {
-    duration: 10,
-    layout: "flow",
-    title: "도입부는 문제를 빨리 세운다",
-    mark: "도입부",
-    caption: "도입부는 문제를 빨리 세운다.",
-    nodes: ["what", "why", "how", "proof", "next"],
-    activeNode: 0,
-    speech:
-      "도입부는 오래 끌지 않습니다. 무엇을 만드는지, 왜 필요한지, 어떤 방식으로 해결하는지 빠르게 세워야 뒤 장면이 자연스럽게 이어집니다.",
-  },
-  {
-    duration: 10,
-    layout: "cards",
-    title: "문제에서 원리로 넘어간다",
-    mark: "원리",
-    caption: "문제에서 원리로 넘어간다.",
-    cards: [
-      ["1", "problem", "화면과 말이 따로 움직임"],
-      ["2", "principle", "audio controls timeline"],
-      ["3", "result", "말과 장면이 같이 끝남"],
-    ],
-    speech:
-      "문제를 보여준 뒤에는 바로 원리로 갑니다. 화면이 먼저 넘어가는 문제를 해결하려면, 말이 끝나는 시점을 화면 전환 기준으로 삼아야 합니다.",
-  },
-  {
-    duration: 10,
-    layout: "spec",
-    title: "각 페이지는 1대1 매칭을 가진다",
-    mark: "1대1",
-    caption: "각 페이지는 1대1 매칭을 가진다.",
-    specs: [
-      ["page", "17"],
-      ["screen", "one idea"],
-      ["speech", "one beat"],
-      ["next", "after audio"],
-    ],
-    speech:
-      "말과 화면은 1대1로 맞아야 합니다. 한 페이지에는 하나의 시각 아이디어가 있고, 그 페이지의 내레이션도 같은 아이디어만 말합니다.",
-  },
-  {
-    duration: 10,
-    layout: "clock",
-    title: "10초 리듬은 지루함을 줄인다",
-    mark: "10초",
-    caption: "10초 리듬은 지루함을 줄인다.",
-    clock: "10s",
-    note: "page rhythm with audio-safe extension",
-    speech:
-      "10초 리듬은 사용자가 따라오기 쉬운 단위입니다. 너무 빠르면 이해가 끊기고, 너무 느리면 같은 화면을 오래 보게 됩니다.",
-  },
-  {
-    duration: 10,
-    layout: "metrics",
-    title: "한 페이지에는 한 아이디어만 둔다",
-    mark: "한 아이디어",
-    caption: "한 페이지에는 한 아이디어만 둔다.",
-    metrics: [
-      ["idea", "1"],
-      ["copy", "short"],
-      ["audio", "one"],
-      ["motion", "clean"],
-    ],
-    speech:
-      "한 페이지에 여러 설명을 넣지 않습니다. 한 아이디어, 한 화면 구조, 한 음성 구간으로 제한하면 다음 장면으로 넘어가는 흐름이 정리됩니다.",
-  },
-  {
-    duration: 10,
-    layout: "pipeline",
-    title: "캐시는 voice별로 분리한다",
-    mark: "voice별",
-    caption: "캐시는 voice별로 분리한다.",
-    steps: ["text", "voice", "hash", "wav", "version"],
-    speech:
-      "오디오 캐시는 원고만으로 나누지 않습니다. 같은 문장도 voice가 다르면 다른 버전이므로, 캐시 키에 voice를 함께 넣습니다.",
-  },
-  {
-    duration: 10,
-    layout: "qa",
-    title: "목소리 섞임은 실패 조건이다",
-    mark: "실패",
-    caption: "목소리 섞임은 실패 조건이다.",
-    rows: [
-      ["one video", "one voice"],
-      ["voice switch", "new version"],
-      ["mixed cache", "reject"],
-    ],
-    speech:
-      "한 영상 안에서 목소리가 섞이면 실패입니다. 선택을 바꾸는 순간 기존 재생과 백그라운드 생성을 끊고, 새 voice 버전으로 다시 준비해야 합니다.",
-  },
-  {
-    duration: 10,
-    layout: "compare",
-    title: "샘플과 풀버전은 다르다",
-    mark: "풀버전",
-    caption: "샘플과 풀버전은 다르다.",
-    panels: [
-      { title: "Sample", lines: ["짧은 비교", "톤 확인", "빠른 선택"], tone: "muted" },
-      { title: "Full Version", lines: ["36페이지", "같은 원고", "voice 고정"], tone: "hot" },
-    ],
-    speech:
-      "짧은 샘플은 목소리를 고르기 위한 도구입니다. 실제 영상은 샘플이 아니라 36페이지 전체를 같은 voice로 만든 풀버전이어야 합니다.",
-  },
-  {
-    duration: 10,
-    layout: "clean",
-    title: "화면 글자는 짧고 구조는 선명해야 한다",
-    mark: "선명",
-    caption: "화면 글자는 짧고 구조는 선명해야 한다.",
-    frames: [
-      ["short title", "한 줄 핵심"],
-      ["visual proof", "카드와 숫자"],
-      ["no clutter", "불필요한 자막 제거"],
-    ],
-    speech:
-      "화면에는 긴 문단을 올리지 않습니다. 긴 설명은 음성이 맡고, 화면은 짧은 제목과 구조화된 정보로만 흐름을 보여줍니다.",
-  },
-  {
-    duration: 10,
-    layout: "render",
-    title: "모바일에서도 장면이 깨지면 안 된다",
-    mark: "모바일",
-    caption: "모바일에서도 장면이 깨지면 안 된다.",
-    speech:
-      "데스크톱에서만 예쁜 화면은 부족합니다. 모바일 폭에서도 글자가 겹치지 않고, 카드가 화면 밖으로 밀리지 않아야 실제 템플릿으로 쓸 수 있습니다.",
-  },
-  {
-    duration: 10,
-    layout: "spec",
-    title: "레이아웃은 장면 목적에 맞춘다",
-    mark: "목적",
-    caption: "레이아웃은 장면 목적에 맞춘다.",
-    specs: [
-      ["compare", "차이 설명"],
-      ["clock", "시간 설명"],
-      ["qa", "검수 설명"],
-      ["final", "정리"],
-    ],
-    speech:
-      "모든 페이지가 같은 카드 모양이면 지루합니다. 비교는 split board, 시간은 clock, 검수는 table처럼 목적에 맞는 HTML을 써야 합니다.",
-  },
-  {
-    duration: 10,
-    layout: "flow",
-    title: "전환은 다음 질문으로 이어져야 한다",
-    mark: "다음 질문",
-    caption: "전환은 다음 질문으로 이어져야 한다.",
-    nodes: ["claim", "because", "therefore", "check", "move"],
-    activeNode: 3,
-    speech:
-      "장면 전환은 갑자기 바뀌면 안 됩니다. 한 페이지의 끝은 다음 페이지가 답할 질문을 남겨야 합니다. 그래야 36페이지가 하나의 흐름처럼 보입니다.",
-  },
-  {
-    duration: 10,
-    layout: "cards",
-    title: "주제가 바뀌어도 구조는 유지된다",
-    mark: "구조",
-    caption: "주제가 바뀌어도 구조는 유지된다.",
-    cards: [
-      ["T", "topic", "새 주제 입력"],
-      ["M", "manifest", "36페이지 생성"],
-      ["V", "version", "voice별 풀버전"],
-    ],
-    speech:
-      "이 시스템은 이 주제에만 묶이면 안 됩니다. 새 주제가 들어와도 36페이지 매니페스트와 voice별 풀버전 구조는 그대로 유지됩니다.",
-  },
-  {
-    duration: 10,
-    layout: "code",
-    title: "짧은 페이지는 확장 규칙을 가진다",
-    mark: "확장 규칙",
-    caption: "짧은 페이지는 확장 규칙을 가진다.",
-    code: [
-      "if measured_duration < 10:",
-      "  add concrete example",
-      "  add failure condition",
-      "  regenerate page audio",
-      "  rebuild timeline",
-    ],
-    speech:
-      "어떤 페이지가 10초보다 너무 짧으면, 침묵을 붙이는 대신 확장 규칙을 실행합니다. 예시나 실패 조건을 넣고 다시 생성합니다.",
-  },
-  {
-    duration: 10,
-    layout: "qa",
-    title: "300초 미만은 자동 실패다",
-    mark: "자동 실패",
-    caption: "300초 미만은 자동 실패다.",
-    rows: [
-      ["runtime >= 300s", "pass"],
-      ["runtime < 300s", "expand"],
-      ["audio cut", "fail"],
-    ],
-    speech:
-      "전체 길이도 숫자로 막아야 합니다. 300초 미만이면 성공이라고 말하지 않습니다. 원고를 늘리고, 바뀐 페이지의 음성을 다시 만듭니다.",
-  },
-  {
-    duration: 10,
-    layout: "spectrum",
-    title: "기본 버전은 cedar로 고정한다",
-    mark: "cedar",
-    caption: "기본 버전은 cedar로 고정한다.",
-    decision: "cedar is the default full-video version.",
-    speech:
-      "기본 풀버전은 cedar로 고정합니다. 설명형 영상에서는 너무 들뜨지 않고 안정적인 목소리가 낫습니다. 다른 voice는 별도 버전으로 봅니다.",
-  },
-  {
-    duration: 10,
-    layout: "metrics",
-    title: "10개 목소리는 10개 버전이다",
-    mark: "10개 버전",
-    caption: "10개 목소리는 10개 버전이다.",
-    metrics: [
-      ["voices", "10"],
-      ["pages", "36"],
-      ["mixing", "0"],
-      ["links", "10"],
-    ],
-    speech:
-      "정리하면 목소리 10개는 옵션 10개가 아니라 버전 10개입니다. 각 버전은 같은 36페이지를 하나의 voice로만 재생합니다.",
-  },
-  {
-    duration: 10,
-    layout: "final",
-    title: "렌더 경로는 하나로 유지한다",
-    mark: "하나",
-    caption: "렌더 경로는 하나로 유지한다.",
-    route: ["prompt", "manifest", "html", "voice", "render"],
-    stamp: "ONE RENDER PATH",
-    speech:
-      "렌더 경로는 하나여야 합니다. 프롬프트가 매니페스트를 만들고, HTML이 페이지를 만들고, voice 버전이 오디오를 만들고, 브라우저가 재생합니다.",
-  },
-  {
-    duration: 10,
-    layout: "pipeline",
-    title: "생성, 측정, 동기화를 반복한다",
-    mark: "반복",
-    caption: "생성, 측정, 동기화를 반복한다.",
-    steps: ["write", "speak", "measure", "sync", "review"],
-    speech:
-      "제작 루프는 반복됩니다. 원고를 쓰고, 음성을 만들고, 길이를 측정하고, 화면을 동기화하고, 브라우저에서 실제로 확인합니다.",
-  },
-  {
-    duration: 10,
-    layout: "clean",
-    title: "사용자는 변화가 보여야 계속 본다",
-    mark: "변화",
-    caption: "사용자는 변화가 보여야 계속 본다.",
-    frames: [
-      ["every 10s", "새 페이지"],
-      ["one idea", "짧은 화면"],
-      ["voice synced", "말 끝난 뒤 전환"],
-    ],
-    speech:
-      "사용자는 변화가 있어야 계속 봅니다. 그래서 30초짜리 정지 화면을 없애고, 10초마다 새로운 페이지가 나타나도록 나눴습니다.",
-  },
-  {
-    duration: 10,
-    layout: "render",
-    title: "최종 검수는 브라우저에서 한다",
-    mark: "브라우저",
-    caption: "최종 검수는 브라우저에서 한다.",
-    speech:
-      "마지막 검수는 코드만 보지 않고 브라우저에서 합니다. 페이지 수, 하단 자막 제거, voice 고정, 장면 전환을 실제 화면에서 확인합니다.",
-  },
-  {
-    duration: 10,
-    layout: "final",
-    title: "36페이지가 하나의 영상처럼 이어진다",
-    mark: "36페이지",
-    caption: "36페이지가 하나의 영상처럼 이어진다.",
-    route: ["36 pages", "10 sec", "one voice", "audio sync", "complete"],
-    stamp: "AUDIO-SYNCED FULL VERSION",
-    speech:
-      "결론은 간단합니다. 36페이지, 10초 리듬, 한 버전 안의 단일 voice, 오디오 기준 전환. 이 네 가지가 맞아야 볼만한 HTML TTS 영상이 됩니다.",
-  },
-];
-
-const _topicScenes = [
-  {
-    duration: 10,
-    layout: "hero",
-    kicker: "OPENAI / APRIL 2026",
-    title: "GPT-5.5는 무엇이 달라졌나",
-    mark: "GPT-5.5",
-    subtitle: "OpenAI 공식 발표 기준으로 보는 모델, 인프라, 안전성",
-    caption: "GPT-5.5는 무엇이 달라졌나.",
-    speech:
-      "이번 영상은 OpenAI가 2026년 4월 23일 발표한 GPT-5.5를 공식 글 기준으로 정리합니다. 내부 비공개 레시피가 아니라, 공개된 모델 방향과 서비스 구조를 봅니다.",
-  },
-  {
-    duration: 10,
-    layout: "compare",
-    title: "답변 모델보다 작업 모델에 가깝다",
-    mark: "작업 모델",
-    caption: "답변 모델보다 작업 모델에 가깝다.",
-    panels: [
-      { title: "Old expectation", lines: ["질문", "짧은 답", "사람이 다음 단계 관리"], tone: "muted" },
-      { title: "GPT-5.5 direction", lines: ["복잡한 목표", "도구 사용", "끝까지 점검"], tone: "hot" },
-    ],
-    speech:
-      "OpenAI는 GPT-5.5를 단순히 더 똑똑한 답변 모델로 설명하지 않습니다. 글쓰기, 코딩, 조사, 데이터 분석, 소프트웨어 조작까지 이어가는 작업 모델로 설명합니다.",
-  },
-  {
-    duration: 10,
-    layout: "spec",
-    title: "핵심은 더 빨리 의도를 파악하는 것",
-    mark: "의도",
-    caption: "핵심은 더 빨리 의도를 파악하는 것.",
-    specs: [
-      ["intent", "earlier"],
-      ["planning", "longer"],
-      ["tools", "stronger"],
-      ["checks", "keeps going"],
-    ],
-    speech:
-      "공식 설명에서 중요한 문장은 사용자가 하려는 일을 더 빨리 이해한다는 점입니다. 그래서 단계를 하나씩 지시하기보다, 지저분한 작업을 맡기고 계획과 점검을 기대할 수 있습니다.",
-  },
-  {
-    duration: 10,
-    layout: "cards",
-    title: "강점은 긴 작업 루프에 있다",
-    mark: "긴 작업",
-    caption: "강점은 긴 작업 루프에 있다.",
-    cards: [
-      ["C", "coding", "구현, 디버그, 테스트"],
-      ["U", "computer use", "앱과 도구 조작"],
-      ["R", "research", "증거 수집과 판단"],
-    ],
-    speech:
-      "OpenAI가 강조한 강점은 agentic coding, computer use, knowledge work, scientific research입니다. 공통점은 한 번 답하고 끝나는 일이 아니라 오래 이어지는 작업이라는 점입니다.",
-  },
-  {
-    duration: 10,
-    layout: "metrics",
-    title: "성능은 올라갔지만 지연은 유지했다",
-    mark: "지연",
-    caption: "성능은 올라갔지만 지연은 유지했다.",
-    metrics: [
-      ["intelligence", "up"],
-      ["latency", "5.4 level"],
-      ["tokens", "lower"],
-      ["work", "longer"],
-    ],
-    speech:
-      "흥미로운 부분은 속도입니다. OpenAI는 GPT-5.5가 GPT-5.4 수준의 실제 서빙 지연을 유지하면서 더 높은 지능을 제공한다고 설명합니다.",
-  },
-  {
-    duration: 10,
-    layout: "code",
-    title: "Codex에서는 토큰 효율도 중요했다",
-    mark: "토큰 효율",
-    caption: "Codex에서는 토큰 효율도 중요했다.",
-    code: ["same engineering task", "fewer tokens", "more checks", "less hand-holding", "higher completion quality"],
-    speech:
-      "Codex에서 중요한 변화는 단지 점수가 아닙니다. 공식 글은 GPT-5.5가 같은 Codex 작업을 더 적은 토큰으로 끝내는 경향도 강조합니다.",
-  },
-  {
-    duration: 10,
-    layout: "metrics",
-    title: "Terminal-Bench 2.0: 82.7%",
-    mark: "82.7%",
-    caption: "Terminal-Bench 2.0은 82.7%로 발표됐다.",
-    metrics: [
-      ["GPT-5.5", "82.7%"],
-      ["GPT-5.4", "75.1%"],
-      ["domain", "coding"],
-      ["style", "CLI work"],
-    ],
-    speech:
-      "코딩 쪽에서는 Terminal-Bench 2.0 숫자가 큽니다. OpenAI 발표 기준 GPT-5.5는 82.7퍼센트, GPT-5.4는 75.1퍼센트입니다.",
-  },
-  {
-    duration: 10,
-    layout: "metrics",
-    title: "SWE-Bench Pro: 58.6%",
-    mark: "58.6%",
-    caption: "SWE-Bench Pro는 58.6%로 공개됐다.",
-    metrics: [
-      ["SWE-Bench Pro", "58.6%"],
-      ["GPT-5.4", "57.7%"],
-      ["task", "GitHub issues"],
-      ["note", "public eval"],
-    ],
-    speech:
-      "SWE-Bench Pro에서는 GPT-5.5가 58.6퍼센트로 공개됐습니다. 실제 GitHub 이슈 해결에 가까운 작업을 얼마나 끝까지 수행하는지 보는 지표입니다.",
-  },
-  {
-    duration: 10,
-    layout: "metrics",
-    title: "GDPval: 84.9%",
-    mark: "84.9%",
-    caption: "전문 지식 작업에서도 상승이 있었다.",
-    metrics: [
-      ["GDPval", "84.9%"],
-      ["GPT-5.4", "83.0%"],
-      ["scope", "44 jobs"],
-      ["type", "knowledge work"],
-    ],
-    speech:
-      "전문 지식 작업에서도 수치가 나옵니다. GDPval에서 GPT-5.5는 84.9퍼센트로 발표됐고, 이는 다양한 직업의 명세 있는 업무를 보는 평가입니다.",
-  },
-  {
-    duration: 10,
-    layout: "metrics",
-    title: "OSWorld-Verified: 78.7%",
-    mark: "78.7%",
-    caption: "컴퓨터 사용 능력도 핵심 축이다.",
-    metrics: [
-      ["OSWorld", "78.7%"],
-      ["GPT-5.4", "75.0%"],
-      ["surface", "real apps"],
-      ["goal", "operate"],
-    ],
-    speech:
-      "computer use에서는 OSWorld-Verified가 중요합니다. GPT-5.5는 78.7퍼센트로, 실제 컴퓨터 환경에서 조작하고 목표를 달성하는 능력을 보여줍니다.",
-  },
-  {
-    duration: 10,
-    layout: "metrics",
-    title: "BrowseComp: 84.4%",
-    mark: "84.4%",
-    caption: "온라인 조사도 발표된 강점 중 하나다.",
-    metrics: [
-      ["BrowseComp", "84.4%"],
-      ["GPT-5.4", "82.7%"],
-      ["skill", "browse"],
-      ["mode", "evidence"],
-    ],
-    speech:
-      "조사 능력도 포함됩니다. BrowseComp에서 GPT-5.5는 84.4퍼센트로 발표됐고, 이는 온라인에서 증거를 찾고 판단하는 능력과 연결됩니다.",
-  },
-  {
-    duration: 10,
-    layout: "flow",
-    title: "연구에서는 질문에서 실험까지 간다",
-    mark: "실험",
-    caption: "연구에서는 질문에서 실험까지 간다.",
-    nodes: ["question", "evidence", "analysis", "code", "result"],
-    activeNode: 2,
-    speech:
-      "과학 연구 쪽 설명도 흥미롭습니다. OpenAI는 GPT-5.5가 질문에 답하는 것을 넘어, 증거를 모으고 분석하고 다음 실험을 제안하는 루프에 강하다고 설명합니다.",
-  },
-  {
-    duration: 10,
-    layout: "cards",
-    title: "공식 글은 GeneBench와 BixBench를 언급한다",
-    mark: "GeneBench",
-    caption: "GeneBench와 BixBench가 연구 평가로 언급됐다.",
-    cards: [
-      ["G", "GeneBench", "유전학 데이터 분석"],
-      ["B", "BixBench", "바이오인포매틱스"],
-      ["L", "loop", "분석과 해석 반복"],
-    ],
-    speech:
-      "공식 발표는 GeneBench와 BixBench 같은 과학 평가도 언급합니다. 핵심은 어려운 데이터 분석을 여러 단계로 이어가는 능력입니다.",
-  },
-  {
-    duration: 10,
-    layout: "spec",
-    title: "만드는 방식은 모델만의 문제가 아니다",
-    mark: "모델만",
-    caption: "만드는 방식은 모델만의 문제가 아니다.",
-    specs: [
-      ["model", "reasoning"],
-      ["serving", "latency"],
-      ["hardware", "GB200 / GB300"],
-      ["stack", "co-designed"],
-    ],
-    speech:
-      "GPT-5.5를 만든다는 말은 모델 파일 하나를 만든다는 뜻으로 끝나지 않습니다. OpenAI는 훈련과 서빙, 하드웨어, 추론 스택을 함께 설계했다고 설명합니다.",
-  },
-  {
-    duration: 10,
-    layout: "flow",
-    title: "GB200과 GB300 NVL72 위에서 설계됐다",
-    mark: "GB200",
-    caption: "GB200과 GB300 NVL72가 인프라로 언급됐다.",
-    nodes: ["train", "serve", "GB200", "GB300", "latency"],
-    activeNode: 2,
-    speech:
-      "공식 글은 GPT-5.5가 NVIDIA GB200과 GB300 NVL72 시스템에 맞춰 공동 설계되고, 훈련되고, 서빙됐다고 말합니다.",
-  },
-  {
-    duration: 10,
-    layout: "compare",
-    title: "추론 효율은 따로 떼어낼 수 없다",
-    mark: "추론 효율",
-    caption: "추론 효율은 전체 시스템 문제다.",
-    panels: [
-      { title: "Isolated tuning", lines: ["모델만 최적화", "서빙은 나중", "병목 숨김"], tone: "muted" },
-      { title: "Integrated system", lines: ["모델", "하드웨어", "트래픽"], tone: "hot" },
-    ],
-    speech:
-      "OpenAI는 GPT-5.4 수준의 지연을 유지하려면 추론을 여러 최적화 조각이 아니라 통합 시스템으로 다시 봐야 했다고 설명합니다.",
-  },
-  {
-    duration: 10,
-    layout: "code",
-    title: "트래픽 분할 휴리스틱도 개선됐다",
-    mark: "휴리스틱",
-    caption: "트래픽 분할과 부하 분산이 개선됐다.",
-    code: [
-      "production traffic patterns",
-      "partition requests",
-      "balance GPU work",
-      "reduce wasted capacity",
-      "serve smarter model at speed",
-    ],
-    speech:
-      "구체적인 예로는 부하 분산과 파티셔닝 휴리스틱이 나옵니다. Codex가 생산 트래픽 패턴을 분석하고 더 나은 분할 방식을 만드는 데 도움을 줬다고 설명합니다.",
-  },
-  {
-    duration: 10,
-    layout: "cards",
-    title: "모델이 자신을 서빙하는 스택도 도왔다",
-    mark: "스택",
-    caption: "GPT-5.5는 인프라 개선에도 쓰였다.",
-    cards: [
-      ["C", "Codex", "실험을 빠르게 배선"],
-      ["5.5", "GPT-5.5", "스택 개선점 제안"],
-      ["I", "infra", "서빙 목표 달성"],
-    ],
-    speech:
-      "공식 글에서 재미있는 표현은 모델이 자신을 서빙하는 인프라 개선에도 도움을 줬다는 점입니다. 다만 이것은 공개된 서빙 최적화 맥락으로만 봐야 합니다.",
-  },
-  {
-    duration: 10,
-    layout: "qa",
-    title: "안전성은 출시 전 절차의 핵심이다",
-    mark: "안전성",
-    caption: "안전성은 출시 전 절차의 핵심이다.",
-    rows: [
-      ["preparedness", "evaluated"],
-      ["red teaming", "internal + external"],
-      ["domains", "bio + cyber"],
-    ],
-    speech:
-      "출시 과정에서 안전성도 큰 축입니다. 시스템 카드에 따르면 GPT-5.5는 배포 전 안전 평가와 Preparedness Framework, 그리고 사이버와 생물학 역량에 대한 타깃 레드팀을 거쳤습니다.",
-  },
-  {
-    duration: 10,
-    layout: "qa",
-    title: "사이버와 생물학은 High로 다뤄졌다",
-    mark: "High",
-    caption: "사이버와 생물학 역량은 High로 취급됐다.",
-    rows: [
-      ["biology / chemistry", "High"],
-      ["cybersecurity", "High"],
-      ["critical cyber", "not reached"],
-    ],
-    speech:
-      "OpenAI는 GPT-5.5의 생물학과 화학, 그리고 사이버 보안 역량을 High로 취급한다고 설명합니다. 동시에 Critical 사이버 수준에는 도달하지 않았다고 밝힙니다.",
-  },
-  {
-    duration: 10,
-    layout: "spectrum",
-    title: "강한 모델일수록 접근 제어가 중요하다",
-    mark: "접근 제어",
-    caption: "강한 모델일수록 접근 제어가 중요하다.",
-    decision: "capability up -> safeguards up",
-    speech:
-      "능력이 올라가면 접근 제어도 같이 올라가야 합니다. GPT-5.5 발표에는 더 엄격한 분류기, 반복 오용 보호, 검증된 방어 목적 접근 같은 내용이 들어 있습니다.",
-  },
-  {
-    duration: 10,
-    layout: "spec",
-    title: "ChatGPT와 Codex에 먼저 배포됐다",
-    mark: "Codex",
-    caption: "ChatGPT와 Codex 배포가 발표됐다.",
-    specs: [
-      ["ChatGPT", "Plus / Pro / Business / Enterprise"],
-      ["Codex", "Plus through Go"],
-      ["context", "400K in Codex"],
-      ["Pro", "harder work"],
-    ],
-    speech:
-      "제품 배포도 명확합니다. GPT-5.5는 ChatGPT와 Codex에 배포됐고, Codex에서는 400K 컨텍스트 윈도우가 공식 글에 언급됩니다.",
-  },
-  {
-    duration: 10,
-    layout: "metrics",
-    title: "API는 4월 24일 업데이트로 제공됐다",
-    mark: "API",
-    caption: "4월 24일 API 제공 업데이트가 있었다.",
-    metrics: [
-      ["announce", "Apr 23"],
-      ["API update", "Apr 24"],
-      ["model", "gpt-5.5"],
-      ["pro", "gpt-5.5-pro"],
-    ],
-    speech:
-      "공식 글에는 2026년 4월 24일 업데이트도 있습니다. GPT-5.5와 GPT-5.5 Pro가 API에서 사용 가능해졌고, 시스템 카드도 추가 safeguards 설명으로 갱신됐습니다.",
-  },
-  {
-    duration: 10,
-    layout: "compare",
-    title: "핵심 변화는 사용자가 덜 관리한다는 점이다",
-    mark: "덜 관리",
-    caption: "핵심 변화는 사용자가 덜 관리한다는 점이다.",
-    panels: [
-      { title: "Before", lines: ["작업 쪼개기", "중간 확인", "수동 재시도"], tone: "muted" },
-      { title: "GPT-5.5", lines: ["계획", "도구 사용", "자체 점검"], tone: "hot" },
-    ],
-    speech:
-      "사용자 경험으로 보면 핵심은 사용자가 덜 관리한다는 점입니다. 모델이 계획하고 도구를 쓰고, 모호한 부분을 지나가며, 끝까지 점검하는 쪽으로 이동했습니다.",
-  },
-  {
-    duration: 10,
-    layout: "flow",
-    title: "좋은 사용법은 목표와 검수 조건을 같이 주는 것",
-    mark: "검수 조건",
-    caption: "목표와 검수 조건을 같이 줘야 한다.",
-    nodes: ["goal", "context", "tools", "checks", "done"],
-    activeNode: 3,
-    speech:
-      "이런 모델을 잘 쓰려면 단순한 질문보다 목표와 검수 조건을 같이 줘야 합니다. 어떤 파일을 봐야 하는지, 무엇을 증거로 볼지, 언제 끝났다고 할지 알려주는 식입니다.",
-  },
-  {
-    duration: 10,
-    layout: "qa",
-    title: "주의할 점은 공개된 사실만 말하는 것이다",
-    mark: "공개된 사실",
-    caption: "공개된 사실만 말해야 한다.",
-    rows: [
-      ["training recipe", "not public"],
-      ["serving details", "partly public"],
-      ["evals", "published"],
-    ],
-    speech:
-      "GPT-5.5를 만드는 영상을 만들 때 주의할 점도 있습니다. 학습 데이터나 내부 레시피를 아는 척하면 안 됩니다. 공개된 평가, 인프라, 안전성, 배포 사실만 말해야 합니다.",
-  },
-  {
-    duration: 10,
-    layout: "pipeline",
-    title: "정리하면 네 축이다",
-    mark: "네 축",
-    caption: "정리하면 네 축이다.",
-    steps: ["model", "tools", "infra", "safety", "product"],
-    speech:
-      "정리하면 GPT-5.5 발표는 네 축으로 볼 수 있습니다. 더 오래 일하는 모델, 더 강한 도구 사용, 더 효율적인 인프라, 더 강한 안전 장치입니다.",
-  },
-  {
-    duration: 10,
-    layout: "clean",
-    title: "이 영상은 발표를 작업 흐름으로 번역한다",
-    mark: "작업 흐름",
-    caption: "발표를 작업 흐름으로 번역한다.",
-    frames: [
-      ["what changed", "작업 모델"],
-      ["how served", "통합 인프라"],
-      ["how released", "안전성과 배포"],
-    ],
-    speech:
-      "이 영상의 목적은 발표문을 그대로 읽는 것이 아닙니다. GPT-5.5가 왜 작업 모델로 설명되는지, 어떻게 서빙되고, 어떤 안전 절차를 거쳤는지 흐름으로 번역하는 것입니다.",
-  },
-  {
-    duration: 10,
-    layout: "final",
-    title: "GPT-5.5는 긴 작업을 맡기는 방향의 모델이다",
-    mark: "긴 작업",
-    caption: "GPT-5.5는 긴 작업을 맡기는 방향의 모델이다.",
-    route: ["intent", "tools", "infra", "safety", "work"],
-    stamp: "GPT-5.5: REAL WORK MODEL",
-    speech:
-      "결론입니다. GPT-5.5의 핵심은 더 좋은 한 문장 답변이 아니라, 긴 작업을 맡기고 도구와 검수를 포함해 끝까지 진행하게 하는 방향입니다.",
-  },
-];
+const scenes = [];
 
 const PAGE_SECONDS = 10;
 
@@ -1042,13 +196,7 @@ function renderSceneBody(scene) {
     `;
   }
   if (scene.layout === "render") {
-    const frames = scene.frames?.length
-      ? scene.frames
-      : [
-          ["핵심", scene.title || "main point"],
-          ["근거", scene.claim || scene.caption || "source backed"],
-          ["다음", scene.caption || "next"],
-        ];
+    const frames = Array.isArray(scene.frames) ? scene.frames : [];
     return `
       ${title}
       <div class="viewport-wall">
@@ -1094,6 +242,9 @@ function renderSceneBody(scene) {
 function renderSceneDeck() {
   document.querySelectorAll(".scene").forEach((sceneEl) => sceneEl.remove());
   const captionNode = document.querySelector("#caption");
+  const emptyStage = document.querySelector("#emptyStage");
+  if (emptyStage) emptyStage.hidden = scenes.length > 0;
+  if (!captionNode || scenes.length === 0) return;
   captionNode.insertAdjacentHTML(
     "beforebegin",
     scenes
@@ -1122,6 +273,7 @@ function rebuildTimeline() {
 }
 
 function updateSceneDuration(index, rawDuration) {
+  if (!Number.isInteger(index) || index < 0 || index >= sceneDurations.length) return;
   if (!Number.isFinite(rawDuration) || rawDuration <= 0) return;
   const syncedDuration = Math.max(PAGE_SECONDS, Math.ceil((rawDuration + 0.35) * 10) / 10);
   if (Math.abs(sceneDurations[index] - syncedDuration) < 0.05) return;
@@ -1289,9 +441,9 @@ const audioBufferPromises = new Map();
 const previewBufferCache = new Map();
 const previewBufferPromises = new Map();
 let currentManifest = {
-  title: "Topic brief first",
-  subtitle: "주제, 출처, 생성 프롬프트를 먼저 확인한 뒤 영상을 만든다",
-  topic: "OpenAI GPT-5.5 발표 내용과 개발 방식",
+  title: "No generated video yet",
+  subtitle: "",
+  topic: "",
   style: "documentary",
   sources: [],
   scenes,
@@ -1461,6 +613,10 @@ function buildSceneVoiceInstructions(scene, index) {
 }
 
 function renderScriptList() {
+  if (!scenes.length) {
+    scriptList.innerHTML = '<li class="script-empty">생성된 내레이션 원고가 아직 없습니다.</li>';
+    return;
+  }
   scriptList.innerHTML = scenes
     .map((scene, index) => {
       const delivery = sceneDelivery(scene, index);
@@ -1709,7 +865,7 @@ function applyInitialBuilderParams() {
 
 function resetBriefReview() {
   if (briefPanel) briefPanel.hidden = false;
-  if (briefTitle) briefTitle.textContent = "Review before generation";
+  if (briefTitle) briefTitle.textContent = "Review generation plan";
   if (briefRoute) briefRoute.textContent = "not prepared";
   if (promptPreview) {
     promptPreview.textContent = "Discuss Topic을 누르면 AI가 사용할 제작 프롬프트가 여기에 표시됩니다.";
@@ -1852,6 +1008,12 @@ function sceneForTime(time) {
 }
 
 function updateSkipControls() {
+  if (!scenes.length) {
+    if (prevSceneBtn) prevSceneBtn.disabled = true;
+    if (nextSceneBtn) nextSceneBtn.disabled = true;
+    if (sceneCounter) sceneCounter.textContent = "00 / 00";
+    return;
+  }
   if (prevSceneBtn) prevSceneBtn.disabled = activeSceneIndex <= 0;
   if (nextSceneBtn) nextSceneBtn.disabled = activeSceneIndex >= scenes.length - 1;
   if (sceneCounter) {
@@ -1860,6 +1022,21 @@ function updateSkipControls() {
 }
 
 function updateView(options = {}) {
+  if (!scenes.length || totalDuration <= 0) {
+    activeSceneIndex = 0;
+    sceneEls.forEach((el) => el.classList.remove("active"));
+    if (captionEl) captionEl.textContent = "생성 전";
+    if (timecodeEl) timecodeEl.textContent = "00:00 / 00:00";
+    if (progressEl) progressEl.style.width = "0%";
+    if (playBtn) playBtn.disabled = true;
+    if (restartBtn) restartBtn.disabled = true;
+    if (downloadBtn) downloadBtn.disabled = true;
+    updateSkipControls();
+    return;
+  }
+  if (playBtn) playBtn.disabled = false;
+  if (restartBtn) restartBtn.disabled = false;
+  if (downloadBtn) downloadBtn.disabled = false;
   const nextIndex = Math.max(0, sceneForTime(currentTime));
   if (nextIndex !== activeSceneIndex) {
     activeSceneIndex = nextIndex;
@@ -2113,10 +1290,11 @@ async function previewSelectedOpenAiVoice(voice) {
 
 async function speakActiveScene() {
   if (!ttsEnabled || !isPlaying) return false;
+  const scene = scenes[activeSceneIndex];
+  if (!scene) return false;
   isLoadingSpeech = true;
   stopSpeech();
   isLoadingSpeech = true;
-  const scene = scenes[activeSceneIndex];
   if (useOpenAiTts) {
     try {
       const started = await speakWithOpenAi(scene);
@@ -2183,6 +1361,10 @@ function tick(timestamp) {
 }
 
 async function play() {
+  if (!scenes.length || totalDuration <= 0) {
+    setBuildStatus("먼저 주제로 새 영상을 생성해야 합니다.", "warn");
+    return;
+  }
   if (currentTime >= totalDuration) currentTime = 0;
   activeSceneIndex = Math.max(0, sceneForTime(currentTime));
   currentTime = sceneStarts[activeSceneIndex] || 0;
@@ -2211,6 +1393,7 @@ function pause() {
 }
 
 async function restart() {
+  if (!scenes.length) return;
   pause();
   currentTime = 0;
   activeSceneIndex = 0;
@@ -2219,6 +1402,7 @@ async function restart() {
 }
 
 async function jumpToScene(index, options = {}) {
+  if (!scenes.length) return;
   const targetIndex = Math.max(0, Math.min(scenes.length - 1, index));
   const wasPlaying = isPlaying;
   if (wasPlaying) pause();
@@ -2464,19 +1648,13 @@ function drawSceneCanvas(ctx, scene, index, sceneProgress, totalProgress) {
     ctx.fillStyle = gradient;
     ctx.fill();
   } else if (scene.layout === "render") {
-    const frameItems = scene.frames?.length
-      ? scene.frames
-      : [
-          ["핵심", scene.title || "main point"],
-          ["근거", scene.claim || scene.caption || "source backed"],
-          ["다음", scene.caption || "next"],
-        ];
+    const frameItems = Array.isArray(scene.frames) ? scene.frames : [];
     [
       [360, 500, 650, 300],
       [1060, 535, 410, 265],
       [1510, 575, 210, 225],
     ].forEach(([x, y, cardWidth, cardHeight], i) => {
-      const [head, body] = frameItems[i] || frameItems[0] || ["핵심", scene.title];
+      const [head, body] = frameItems[i] || ["", ""];
       fillCard(
         ctx,
         x,
@@ -2513,6 +1691,7 @@ function wait(ms) {
 
 async function recordYouTubeVideo() {
   if (!window.MediaRecorder) throw new Error("MediaRecorder is unavailable in this browser.");
+  if (!scenes.length) throw new Error("먼저 주제로 새 영상을 생성해야 합니다.");
   if (!useOpenAiTts) throw new Error("1080p export needs OpenAI, Google, or macOS server TTS, not browser-only TTS.");
   const blocked = manifestBlockReason(currentManifest);
   if (blocked) throw new Error(`Render blocked: ${blocked}`);
@@ -2833,7 +2012,7 @@ async function generateVideoFromTopic(options = {}) {
   if (prepareBtn) prepareBtn.disabled = true;
   setBuildStatus(
     options.automatic
-      ? "Loading verified default video..."
+      ? "Generating a verified video from this topic..."
       : "Researching sources, generating scenes, then running quality gate...",
   );
   if (downloadLink) downloadLink.hidden = true;
