@@ -698,6 +698,8 @@ function decodeHtml(value) {
     .replace(/&amp;/g, "&")
     .replace(/&quot;/g, '"')
     .replace(/&#39;/g, "'")
+    .replace(/&#x27;/g, "'")
+    .replace(/&#8217;/g, "'")
     .replace(/&lt;/g, "<")
     .replace(/&gt;/g, ">")
     .replace(/&#x2F;/g, "/");
@@ -715,6 +717,139 @@ function hostOf(url) {
   } catch {
     return "";
   }
+}
+
+const weakSourceHostPatterns = [
+  /^community\.openai\.com$/i,
+  /(^|\.)tistory\.com$/i,
+  /(^|\.)blog\.naver\.com$/i,
+  /(^|\.)naver\.com$/i,
+  /(^|\.)medium\.com$/i,
+  /(^|\.)reddit\.com$/i,
+  /(^|\.)quora\.com$/i,
+  /(^|\.)wikipedia\.org$/i,
+];
+
+const primarySourceHostPatterns = [
+  /^(openai\.com|platform\.openai\.com|developers\.openai\.com|help\.openai\.com|deploymentsafety\.openai\.com|model-spec\.openai\.com)$/i,
+  /(^|\.)googleblog\.com$/i,
+  /^blog\.google$/i,
+  /(^|\.)google\.com$/i,
+  /(^|\.)android\.com$/i,
+  /(^|\.)anthropic\.com$/i,
+  /(^|\.)microsoft\.com$/i,
+  /(^|\.)apple\.com$/i,
+  /(^|\.)nvidia\.com$/i,
+  /(^|\.)meta\.com$/i,
+  /(^|\.)github\.com$/i,
+  /(^|\.)arxiv\.org$/i,
+  /(^|\.)acm\.org$/i,
+  /(^|\.)ieee\.org$/i,
+];
+
+const trustedSourceHostPatterns = [
+  /(^|\.)theverge\.com$/i,
+  /(^|\.)techcrunch\.com$/i,
+  /(^|\.)wired\.com$/i,
+  /(^|\.)technologyreview\.com$/i,
+  /(^|\.)reuters\.com$/i,
+  /(^|\.)apnews\.com$/i,
+  /(^|\.)bloomberg\.com$/i,
+  /(^|\.)ft\.com$/i,
+  /(^|\.)wsj\.com$/i,
+];
+
+function matchesAnyHost(host, patterns) {
+  return patterns.some((pattern) => pattern.test(host));
+}
+
+function sourceLooksPrimaryForTopic(host, topic) {
+  const text = `${topic} ${host}`.toLowerCase();
+  return (
+    (/openai|chatgpt|gpt/.test(text) &&
+      /^(openai\.com|platform\.openai\.com|developers\.openai\.com|help\.openai\.com|deploymentsafety\.openai\.com|model-spec\.openai\.com)$/.test(
+        host,
+      )) ||
+    (/google|gemini|android/.test(text) && /(google\.com|googleblog\.com|blog\.google|android\.com)$/.test(host)) ||
+    (/anthropic|claude/.test(text) && /anthropic\.com$/.test(host)) ||
+    (/microsoft|windows|azure|copilot/.test(text) && /microsoft\.com$/.test(host)) ||
+    (/apple|ios|macos|vision/.test(text) && /apple\.com$/.test(host)) ||
+    (/nvidia|cuda|gb200|gb300/.test(text) && /nvidia\.com$/.test(host)) ||
+    (/meta|llama|facebook|instagram|threads/.test(text) && /meta\.com$/.test(host)) ||
+    (/paper|논문|research|model|benchmark/.test(text) && /(arxiv\.org|acm\.org|ieee\.org)$/.test(host))
+  );
+}
+
+function sourceReliability(source, topic = "") {
+  const host = hostOf(source?.url) || String(source?.host || "").replace(/^www\./, "");
+  const haystack = `${source?.title || ""} ${source?.snippet || ""} ${host}`.toLowerCase();
+  let score = 45;
+  const reasons = [];
+
+  if (source?.verified) {
+    score += 15;
+    reasons.push("reachable");
+  } else if (source?.verified === false) {
+    score -= 18;
+    reasons.push("not verified");
+  }
+
+  if (sourceLooksPrimaryForTopic(host, topic) || matchesAnyHost(host, primarySourceHostPatterns)) {
+    score += 32;
+    reasons.push("primary/official host");
+  } else if (/docs?\.|developers?\.|developer\.|research\.|press\.|newsroom\./.test(host)) {
+    score += 22;
+    reasons.push("official-looking documentation host");
+  } else if (matchesAnyHost(host, trustedSourceHostPatterns)) {
+    score += 16;
+    reasons.push("trusted editorial source");
+  }
+
+  if (/official|공식|announcement|announced|release|blog|docs?|documentation|developer/.test(haystack)) {
+    score += 8;
+    reasons.push("official/source wording");
+  }
+  if (matchesAnyHost(host, weakSourceHostPatterns)) {
+    score -= 28;
+    reasons.push("secondary or user-generated host");
+  }
+  if (/rumor|leak|추측|루머|anonymous|unconfirmed/.test(haystack)) {
+    score -= 20;
+    reasons.push("speculative wording");
+  }
+
+  score = Math.max(0, Math.min(100, Math.round(score)));
+  const tier = score >= 84 ? "primary" : score >= 70 ? "trusted" : score >= 52 ? "secondary" : "weak";
+  const reason =
+    reasons.length > 0
+      ? reasons.slice(0, 3).join(", ")
+      : tier === "weak"
+        ? "weak or indirect source"
+        : "reachable secondary source";
+  return { reliability: score, tier, reason };
+}
+
+function rankSourceCandidates(sources, topic = "") {
+  return [...sources]
+    .map((source) => ({ ...source, ...sourceReliability(source, topic) }))
+    .sort((a, b) => {
+      if ((b.reliability || 0) !== (a.reliability || 0)) return (b.reliability || 0) - (a.reliability || 0);
+      return String(a.host || "").localeCompare(String(b.host || ""));
+    });
+}
+
+function sourceQualitySummary(sources) {
+  const list = Array.isArray(sources) ? sources : [];
+  const average = list.length
+    ? Math.round(list.reduce((sum, source) => sum + (Number(source.reliability) || 0), 0) / list.length)
+    : 0;
+  return {
+    average,
+    primaryCount: list.filter((source) => source.tier === "primary").length,
+    trustedCount: list.filter((source) => source.tier === "trusted").length,
+    secondaryCount: list.filter((source) => source.tier === "secondary").length,
+    weakCount: list.filter((source) => source.tier === "weak").length,
+  };
 }
 
 function decodeDuckDuckGoUrl(rawHref) {
@@ -772,10 +907,10 @@ async function verifySource(source) {
   return { ...source, verified: false, status: 0, checkedAt };
 }
 
-async function verifySources(sources) {
+async function verifySources(sources, topic = "") {
   const checked = await Promise.all(sources.map((source) => verifySource(source)));
   const verified = checked.filter((source) => source.verified);
-  return (verified.length ? verified : checked).slice(0, 5);
+  return rankSourceCandidates(verified.length ? verified : checked, topic).slice(0, 5);
 }
 
 function researchRequiredFor(topic, style) {
@@ -786,6 +921,33 @@ function researchRequiredFor(topic, style) {
     /\b(latest|news|today|yesterday|announced|released|launch|official|fact|research|source|verified)\b/.test(text) ||
     /\b20(2[4-9]|3\d)\b/.test(text)
   );
+}
+
+function officialSearchQueries(topic, latinQuery, shortQuery) {
+  const text = topic.toLowerCase();
+  const base = latinQuery || shortQuery || topic;
+  if (/openai|chatgpt|gpt/.test(text)) {
+    return [
+      `site:openai.com ${base}`,
+      `site:developers.openai.com ${base}`,
+      `site:deploymentsafety.openai.com ${base}`,
+      `site:help.openai.com ${base}`,
+    ];
+  }
+  if (/google|gemini|android/.test(text)) {
+    return [
+      `site:blog.google ${base}`,
+      `site:developers.google.com ${base}`,
+      `site:android.com ${base}`,
+      `site:android-developers.googleblog.com ${base}`,
+    ];
+  }
+  if (/anthropic|claude/.test(text)) return [`site:anthropic.com ${base}`];
+  if (/microsoft|azure|copilot|windows/.test(text))
+    return [`site:microsoft.com ${base}`, `site:azure.microsoft.com ${base}`];
+  if (/nvidia|cuda|gb200|gb300/.test(text)) return [`site:nvidia.com ${base}`];
+  if (/apple|ios|macos|vision/.test(text)) return [`site:apple.com ${base}`];
+  return [];
 }
 
 function parseSearchResults(html) {
@@ -822,7 +984,7 @@ function parseSearchResults(html) {
 async function researchTopic(topic, style) {
   const required = researchRequiredFor(topic, style);
   const query = topic;
-  const research = { required, query, sources: [], warnings: [] };
+  const research = { required, query, sources: [], sourceQuality: sourceQualitySummary([]), warnings: [] };
   if (!required) return research;
 
   try {
@@ -834,9 +996,17 @@ async function researchTopic(topic, style) {
     const shortQuery = topicTokens.slice(0, 3).join(" ");
     const queries = [
       ...new Set(
-        [topic, shortQuery, latinQuery, latinQuery ? `${latinQuery} official` : "", `${shortQuery} 공식 발표`].filter(
-          (item) => item && item.length >= 3,
-        ),
+        [
+          ...officialSearchQueries(topic, latinQuery, shortQuery),
+          topic,
+          shortQuery,
+          latinQuery,
+          latinQuery ? `${latinQuery} official announcement` : "",
+          latinQuery ? `${latinQuery} official blog` : "",
+          latinQuery ? `${latinQuery} documentation` : "",
+          `${shortQuery} 공식 발표`,
+          `${shortQuery} 공식 문서`,
+        ].filter((item) => item && item.length >= 3),
       ),
     ];
     const byUrl = new Map();
@@ -850,21 +1020,19 @@ async function researchTopic(topic, style) {
       for (const result of parseSearchResults(html)) {
         if (!byUrl.has(result.url)) byUrl.set(result.url, result);
       }
-      if (byUrl.size >= 5) break;
+      const ranked = rankSourceCandidates([...byUrl.values()], topic);
+      if (byUrl.size >= 12 && sourceQualitySummary(ranked.slice(0, 5)).primaryCount > 0) break;
     }
-    const officialHostScore = (host) =>
-      /openai\.com|platform\.openai\.com|model-spec\.openai\.com|blog\.google|android\.com|android-developers\.googleblog\.com|developers\.google\.com/.test(
-        host,
-      )
-        ? 1
-        : 0;
-    const candidates = [...byUrl.values()]
-      .sort((a, b) => officialHostScore(b.host) - officialHostScore(a.host))
-      .slice(0, 5);
-    research.sources = await verifySources(candidates);
+    const candidates = rankSourceCandidates([...byUrl.values()], topic).slice(0, 10);
+    research.sources = await verifySources(candidates, topic);
+    research.sourceQuality = sourceQualitySummary(research.sources);
     if (!research.sources.length) research.warnings.push("No search results parsed.");
     if (research.sources.some((source) => !source.verified))
       research.warnings.push("Some source URLs could not be verified as reachable.");
+    if (research.sourceQuality.primaryCount === 0)
+      research.warnings.push("No official or primary source was found; factual claims must stay cautious.");
+    if (research.sourceQuality.weakCount > 0)
+      research.warnings.push("Weak secondary sources are present and should not carry central claims.");
   } catch (error) {
     research.warnings.push(`Search failed: ${String(error.message || error).slice(0, 160)}`);
   }
@@ -1018,6 +1186,31 @@ function normalizeDelivery(value, layout, index, sceneCount, style = "explainer"
   };
 }
 
+function normalizeEvidenceRefs(value, sources, index, layout) {
+  if (!Array.isArray(sources) || sources.length === 0 || layout === "sources") return [];
+  const sourceIds = sources.map((source, sourceIndex) => source.id || `S${sourceIndex + 1}`);
+  const rawRefs = Array.isArray(value) ? value : [];
+  const refs = rawRefs
+    .map((item) => {
+      if (typeof item === "number") return `S${item}`;
+      if (typeof item === "string") {
+        const trimmed = item.trim().toUpperCase();
+        if (/^\d+$/.test(trimmed)) return `S${trimmed}`;
+        if (/^S\d+$/.test(trimmed)) return trimmed;
+      }
+      if (item && typeof item === "object") {
+        if (item.id) return String(item.id).trim().toUpperCase();
+        if (item.sourceId) return String(item.sourceId).trim().toUpperCase();
+      }
+      return "";
+    })
+    .filter((ref, refIndex, list) => sourceIds.includes(ref) && list.indexOf(ref) === refIndex)
+    .slice(0, 2);
+  if (refs.length) return refs;
+  if (["final", "hero"].includes(layout)) return sourceIds.slice(0, Math.min(2, sourceIds.length));
+  return [sourceIds[index % sourceIds.length]];
+}
+
 function normalizeScene(raw, index, sceneCount, topic, options = {}) {
   const layouts = [
     "hero",
@@ -1060,6 +1253,8 @@ function normalizeScene(raw, index, sceneCount, topic, options = {}) {
     speech,
   };
   scene.delivery = normalizeDelivery(raw?.delivery, layout, index, sceneCount, options.style);
+  scene.claim = clipText(raw?.claim, scene.caption || title, 150);
+  scene.evidenceRefs = normalizeEvidenceRefs(raw?.evidenceRefs, options.sources || [], index, layout);
 
   if (layout === "hero") {
     scene.kicker = clipText(raw?.kicker, "HTML TTS VIDEO", 32).toUpperCase();
@@ -1130,7 +1325,7 @@ function normalizeScene(raw, index, sceneCount, topic, options = {}) {
   return scene;
 }
 
-function normalizeSources(value) {
+function normalizeSources(value, topic = "") {
   const list = Array.isArray(value) ? value : [];
   const seen = new Set();
   return list
@@ -1139,14 +1334,25 @@ function normalizeSources(value) {
       const host = clipText(source?.host || hostOf(url), "", 80);
       const title = clipText(source?.title, host || url || "source", 140);
       const snippet = clipText(source?.snippet, "", 240);
-      const normalized = { title, url, host, snippet };
+      const enriched = sourceReliability({ ...source, title, url, host, snippet }, topic);
+      const normalized = {
+        title,
+        url,
+        host,
+        snippet,
+        reliability: Number(source?.reliability) || enriched.reliability,
+        tier: clipText(source?.tier, enriched.tier, 24),
+        reason: clipText(source?.reason, enriched.reason, 140),
+      };
       if (source?.verified !== undefined) normalized.verified = Boolean(source.verified);
       if (source?.status !== undefined) normalized.status = Number(source.status) || 0;
       if (source?.checkedAt) normalized.checkedAt = clipText(source.checkedAt, "", 40);
+      if (source?.id) normalized.id = clipText(source.id, "", 12).toUpperCase();
       return normalized;
     })
     .filter((source) => source.url && source.host && !seen.has(source.url) && seen.add(source.url))
-    .slice(0, 5);
+    .slice(0, 5)
+    .map((source, index) => ({ ...source, id: source.id || `S${index + 1}` }));
 }
 
 function makeSourcesScene(topic, sources) {
@@ -1252,9 +1458,18 @@ function scoreManifest(manifest, research) {
 
   const sourceRequired = Boolean(research?.required);
   const sourceCount = Array.isArray(manifest.sources) ? manifest.sources.length : 0;
+  const sourceQuality = sourceQualitySummary(manifest.sources || []);
   if (sourceRequired && sourceCount === 0) {
     score -= 30;
     issues.push("Factual/current topic needs verified sources.");
+  }
+  if (sourceRequired && sourceCount > 0 && sourceQuality.primaryCount === 0) {
+    score -= 14;
+    issues.push("No official or primary source supports the core claims.");
+  }
+  if (sourceRequired && sourceQuality.weakCount >= Math.ceil(sourceCount / 2)) {
+    score -= 10;
+    issues.push("Too many weak or indirect sources.");
   }
   if (sourceCount > 0 && scenes.at(-1)?.layout !== "sources") {
     score -= 24;
@@ -1264,6 +1479,10 @@ function scoreManifest(manifest, research) {
   const layoutCounts = new Map();
   let adjacentRepeats = 0;
   let adjacentDeliveryRepeats = 0;
+  let missingEvidenceRefs = 0;
+  let invalidEvidenceRefs = 0;
+  let genericNarrationScenes = 0;
+  const validSourceRefs = new Set((manifest.sources || []).map((source, index) => source.id || `S${index + 1}`));
   for (let index = 0; index < scenes.length; index += 1) {
     const scene = scenes[index] || {};
     layoutCounts.set(scene.layout, (layoutCounts.get(scene.layout) || 0) + 1);
@@ -1283,6 +1502,26 @@ function scoreManifest(manifest, research) {
       score -= 2;
       issues.push(`Scene ${index + 1} narration is likely too long for the 10s rhythm.`);
     }
+    if (sourceRequired && !["sources"].includes(scene.layout)) {
+      const refs = Array.isArray(scene.evidenceRefs) ? scene.evidenceRefs : [];
+      if (!refs.length) missingEvidenceRefs += 1;
+      invalidEvidenceRefs += refs.filter((ref) => !validSourceRefs.has(ref)).length;
+    }
+    if (
+      /중요합니다|살펴봅니다|알아봅니다|핵심입니다|이 장면은|자연스럽게 이어|한 가지 질문만 남기고|기준으로 확인합니다|사실은 짧게 고정/.test(
+        scene.speech || "",
+      )
+    ) {
+      genericNarrationScenes += 1;
+    }
+  }
+  if (missingEvidenceRefs) {
+    score -= Math.min(18, missingEvidenceRefs * 2);
+    issues.push(`Scene evidence references missing: ${missingEvidenceRefs}.`);
+  }
+  if (invalidEvidenceRefs) {
+    score -= Math.min(12, invalidEvidenceRefs * 3);
+    issues.push(`Invalid evidence references: ${invalidEvidenceRefs}.`);
   }
   if (adjacentRepeats) {
     score -= Math.min(24, adjacentRepeats * 8);
@@ -1319,12 +1558,20 @@ function scoreManifest(manifest, research) {
     score -= 10;
     issues.push("Too many generic scene titles.");
   }
+  if (genericNarrationScenes > Math.ceil(scenes.length * 0.25)) {
+    score -= 12;
+    issues.push("Narration sounds too templated or boring.");
+  }
 
   score = Math.max(0, Math.min(100, Math.round(score)));
   return {
     score,
-    passed: score >= 82 && (!sourceRequired || sourceCount > 0) && adjacentRepeats === 0,
+    passed:
+      score >= 82 &&
+      (!sourceRequired || (sourceCount > 0 && sourceQuality.average >= 52 && missingEvidenceRefs === 0)) &&
+      adjacentRepeats === 0,
     issues: issues.slice(0, 8),
+    sourceQuality,
   };
 }
 
@@ -1337,10 +1584,11 @@ function normalizeManifest(
 ) {
   const sourceList = normalizeSources(
     research.required ? research.sources : research.sources?.length ? research.sources : payload?.sources,
+    topic,
   );
   const sourceIndex = sourceList.length ? sceneCount - 1 : undefined;
   const finalIndex = sourceList.length ? sceneCount - 2 : sceneCount - 1;
-  const options = { sourceIndex, finalIndex, style };
+  const options = { sourceIndex, finalIndex, style, sources: sourceList };
   const rawScenes = Array.isArray(payload?.scenes) ? payload.scenes : [];
   const padded = rawScenes.slice(0, sceneCount);
   while (padded.length < sceneCount) padded.push({});
@@ -1378,6 +1626,7 @@ function normalizeManifest(
       required: Boolean(research.required),
       query: research.query || "",
       sources: sourceList,
+      sourceQuality: sourceQualitySummary(sourceList),
       warnings: Array.isArray(research.warnings) ? research.warnings : [],
     },
     scenes: normalizedScenes,
@@ -1417,60 +1666,103 @@ function estimateSceneSeconds(speech) {
   return Math.max(10, Math.min(20, Math.round(length / 6)));
 }
 
-function fallbackSpeech(topicLabel, title, source, index, hasSources) {
-  const angles = [
-    "사용자가 실제로 느낄 변화",
-    "제품 구조가 바뀌는 지점",
-    "출시와 지원 범위",
-    "개인정보와 통제권",
-    "개발자와 생태계 영향",
-  ];
+function sourceSpeechFragment(source) {
+  if (!source) return "";
+  const title = stripHtml(source.title || "");
+  const snippet = stripHtml(source.snippet || "");
+  const candidate = title.length >= 12 ? title : snippet;
+  return clipText(candidate, source.host || "출처", 62);
+}
+
+function fallbackSpeech(topicLabel, title, source, index, hasSources, topicType = "evergreen-explainer") {
+  const angleByType = {
+    "current-news": [
+      "확인된 사실",
+      "사용자에게 보이는 변화",
+      "개발자가 확인할 조건",
+      "아직 불확실한 부분",
+      "다음에 확인할 지점",
+    ],
+    comparison: ["판단 기준", "장점", "제한", "실제 선택", "예외 상황"],
+    tutorial: ["목표 상태", "준비 조건", "실행 순서", "실패 지점", "검증 방법"],
+    "documentary-analysis": ["배경 압력", "작동 원리", "결과", "반론", "의미"],
+    "story-case": ["출발점", "긴장", "오판", "전환", "교훈"],
+    "human-stakes": ["사람의 체감", "불안의 원인", "통제권", "회복", "선택"],
+    "evergreen-explainer": ["핵심 원리", "대표 예시", "오해", "한계", "정리"],
+  };
+  const angles = angleByType[topicType] || angleByType["evergreen-explainer"];
   const angle = angles[index % angles.length];
+  const fragment = sourceSpeechFragment(source);
+  const sourceName = source?.host || "확인된 출처";
+  const sourceLead = source ? `${sourceName}에서 확인되는 단서` : "사용자가 준 주제";
+  const transitions = [
+    `먼저 ${topicLabel}${josa(topicLabel, "을", "를")} ${angle} 관점에서 좁혀 봅니다.`,
+    `여기서 중요한 건 ${title}${josa(title, "을", "를")} 하나의 주장으로 고정하는 일입니다.`,
+    `이 장면은 ${sourceLead}${josa(sourceLead, "을", "를")} 바탕으로, 화면에는 결론만 남기고 설명은 음성으로 넘깁니다.`,
+    `다음 판단은 ${angle}${josa(angle, "을", "를")} 기준으로 갈립니다.`,
+  ];
   if (/결론|정리/.test(title)) {
-    return `정리하면 ${topicLabel}${josa(topicLabel, "은", "는")} 단순 기능 추가보다 방향 변화에 가깝습니다. 판단 기준은 출처, 적용 범위, 실제 사용자 경험입니다.`;
+    return `정리하면 ${topicLabel}${josa(topicLabel, "은", "는")} 한 문장으로 단정할 주제가 아닙니다. 확인된 근거, 적용 범위, 남은 불확실성을 나눠 봐야 판단이 흔들리지 않습니다.`;
   }
   if (source) {
-    return `${title}${josa(title, "은", "는")} ${source.host} 기준으로 확인합니다. 사실은 짧게 고정하고, 해석은 다음 장면에서 따로 분리합니다.`;
+    const evidenceSentence = fragment
+      ? `${sourceName}의 "${fragment}"를 확인 기준으로 둡니다.`
+      : `${sourceName}의 확인 가능한 내용만 중심에 둡니다.`;
+    return `${transitions[index % transitions.length]} ${evidenceSentence} 추측은 낮추고, 확인된 범위만 다음 장면으로 넘깁니다.`;
   }
   const sourceLine = hasSources ? "확인된 출처와 맞지 않는 추측은 빼고," : "최신 사실처럼 보이는 단정은 피하고,";
-  return `${topicLabel}${josa(topicLabel, "을", "를")} ${angle} 관점에서 봅니다. ${sourceLine} 한 가지 질문만 남기고 바로 다음 장면으로 넘깁니다.`;
+  return `${transitions[index % transitions.length]} ${sourceLine} 시청자가 다음 장면에서 확인할 질문을 하나만 남깁니다.`;
 }
 
 function fallbackManifest(topic, sceneCount = 30, style = "explainer", research = { required: false, sources: [] }) {
   const topicLabel = shortTopicLabel(topic);
-  const sourceList = normalizeSources(research.sources);
+  const sourceList = normalizeSources(research.sources, topic);
   const hasSources = sourceList.length > 0;
-  const plan = [
-    ["hero", `${topicLabel}의 핵심 변화`, topicLabel.split(/\s+/)[0] || topicLabel],
-    ["compare", "단순 업데이트인지 플랫폼 전환인지 가른다", "플랫폼 전환"],
-    ["spec", "공식 출처를 먼저 기준으로 둔다", "공식 출처"],
-    ["cards", "변화는 경험, 기기, 개발자 흐름으로 나뉜다", "세 갈래"],
-    ["flow", "기능 발표에서 사용 장면으로 이동한다", "사용 장면"],
-    ["metrics", "확인된 일정과 적용 범위를 분리한다", "적용 범위"],
-    ["code", "AI 기능은 화면보다 조건이 중요하다", "조건"],
-    ["qa", "과장된 해석은 실패 조건으로 둔다", "실패 조건"],
-    ["pipeline", "출처에서 장면까지 한 방향으로 만든다", "출처"],
-    ["clean", "화면은 한 주장만 보여준다", "한 주장"],
-    ["clock", "도입 뒤에는 긴장감을 남긴다", "긴장감"],
-    ["compare", "사용자에게 보이는 변화와 내부 변화를 나눈다", "보이는 변화"],
-    ["spec", "개인정보와 온디바이스 경계를 따로 본다", "경계"],
-    ["cards", "새 기능은 맥락, 행동, 제한으로 설명한다", "제한"],
-    ["flow", "전화기에서 자동차와 노트북까지 흐름을 넓힌다", "흐름"],
-    ["metrics", "지원 기기와 출시 시점은 숫자로 고정한다", "숫자"],
-    ["qa", "출처가 약한 주장은 화면에서 낮춘다", "낮춘다"],
-    ["pipeline", "내레이션은 근거 다음에 해석을 붙인다", "근거"],
-    ["clean", "긴 설명은 음성으로 보내고 화면은 줄인다", "줄인다"],
-    ["render", "장면 변화는 10초 단위로 유지한다", "10초"],
-    ["compare", "편리함과 통제권을 같이 놓고 본다", "통제권"],
-    ["spec", "개발자 관점의 변화도 한 장면으로 분리한다", "개발자"],
-    ["cards", "시청자가 기억할 세 문장을 만든다", "세 문장"],
-    ["flow", "마지막 전에는 왜 중요한지 다시 묶는다", "다시 묶는다"],
-    ["metrics", "볼만한 영상은 길이와 밀도를 함께 맞춘다", "밀도"],
-    ["qa", "마지막 검수는 출처와 말의 일치다", "일치"],
-    ["pipeline", "생성 실패 시에도 템플릿은 멈추지 않는다", "멈추지 않는다"],
-    ["clean", "정리는 짧게, 출처는 분명하게 둔다", "분명하게"],
-    ["final", `${topicLabel}의 결론`, "결론"],
+  const topicType = topicTypeFor(topic, style);
+  const planByType = {
+    "current-news": [
+      ["hero", `${topicLabel}: 확인된 변화부터 본다`, "확인된 변화"],
+      ["compare", "소문과 공식 발표를 먼저 분리한다", "분리"],
+      ["spec", "공식 문서가 말한 범위를 고정한다", "공식 범위"],
+      ["cards", "영향은 사용자, 개발자, 기업으로 갈린다", "세 갈래"],
+      ["flow", "기능 이름보다 사용 흐름이 중요하다", "사용 흐름"],
+      ["metrics", "일정과 제공 범위는 숫자로 따로 둔다", "숫자"],
+      ["qa", "출처가 약한 문장은 주장으로 쓰지 않는다", "약한 출처"],
+      ["pipeline", "근거에서 해석으로 한 단계씩 이동한다", "근거"],
+      ["clean", "화면은 확인된 한 문장만 보여준다", "한 문장"],
+      ["clock", "아직 모르는 부분을 중간에 남긴다", "불확실성"],
+    ],
+    comparison: [
+      ["hero", `${topicLabel}: 무엇을 선택할지부터 정한다`, "선택"],
+      ["compare", "비교 기준 없이는 결론이 흔들린다", "기준"],
+      ["spec", "가격, 성능, 제한을 분리한다", "분리"],
+      ["cards", "누구에게 맞는지가 핵심이다", "대상"],
+      ["flow", "결정은 사용 상황에서 시작한다", "상황"],
+      ["qa", "과장된 장점은 바로 걸러낸다", "걸러낸다"],
+    ],
+    tutorial: [
+      ["hero", `${topicLabel}: 끝 상태를 먼저 보여준다`, "끝 상태"],
+      ["spec", "준비 조건을 놓치면 흐름이 깨진다", "준비"],
+      ["pipeline", "단계는 짧고 검증은 자주 한다", "검증"],
+      ["qa", "실패 지점은 미리 분리한다", "실패"],
+      ["clean", "화면은 지금 해야 할 일만 남긴다", "지금"],
+    ],
+  };
+  const defaultPlan = [
+    ["hero", `${topicLabel}: 왜 지금 중요한가`, "왜 지금"],
+    ["compare", "겉으로 보이는 변화와 실제 구조를 나눈다", "구조"],
+    ["spec", "주장을 작게 쪼개면 검증이 쉬워진다", "검증"],
+    ["cards", "핵심은 맥락, 원리, 한계로 나뉜다", "맥락"],
+    ["flow", "좋은 설명은 질문을 따라 이동한다", "질문"],
+    ["metrics", "시청자가 기억할 숫자를 따로 둔다", "숫자"],
+    ["qa", "약한 근거는 낮은 확신으로 말한다", "낮은 확신"],
+    ["pipeline", "사실, 해석, 결론을 섞지 않는다", "분리"],
+    ["clean", "한 장면에는 한 주장만 남긴다", "한 주장"],
+    ["clock", "전환 전에는 다음 질문을 만든다", "다음 질문"],
   ];
+  const basePlan = planByType[topicType] || defaultPlan;
+  const plan = Array.from({ length: Math.max(1, sceneCount - 1) }, (_, index) => basePlan[index % basePlan.length]);
+  plan[sceneCount - 2] = ["final", `${topicLabel}의 결론`, "결론"];
   const scenes = Array.from({ length: sceneCount }, (_, index) => {
     const [layout, title, mark] =
       index === sceneCount - 1 ? ["final", `${topicLabel}의 결론`, "결론"] : plan[index % plan.length];
@@ -1481,12 +1773,12 @@ function fallbackManifest(topic, sceneCount = 30, style = "explainer", research 
         title,
         mark,
         caption: `${title}.`,
-        speech: fallbackSpeech(topicLabel, title, source, index, hasSources),
+        speech: fallbackSpeech(topicLabel, title, source, index, hasSources, topicType),
       },
       index,
       sceneCount,
       topic,
-      { style },
+      { style, sources: sourceList },
     );
   });
   return normalizeManifest(
@@ -1508,10 +1800,46 @@ function styleGuidanceFor(style) {
   return "Direct explainer. Hook fast, explain mechanism, show examples, name risks, then synthesize clearly.";
 }
 
+function topicTypeFor(topic, style) {
+  const text = `${topic} ${style}`.toLowerCase();
+  if (/뉴스|최신|오늘|어제|이번|현재|발표|출시|공개|속보|latest|news|announced|released|launch/.test(text))
+    return "current-news";
+  if (/비교|vs|versus|차이|대안|better|compare/.test(text)) return "comparison";
+  if (/튜토리얼|방법|하는 법|how to|guide|setup|만드는 법|사용법/.test(text)) return "tutorial";
+  if (/왜|이유|원인|history|documentary|다큐/.test(text) || style === "documentary") return "documentary-analysis";
+  if (/story|스토리|실패|성공|case study|사례/.test(text) || style === "story") return "story-case";
+  if (/감정|인생|동기|관계|불안|emotional/.test(text) || style === "emotional") return "human-stakes";
+  return "evergreen-explainer";
+}
+
+function topicTypeGuidanceFor(topicType) {
+  const guidance = {
+    "current-news":
+      "Lead with what is confirmed, what changed, who is affected, what is still uncertain, and what viewers should verify next.",
+    comparison:
+      "Define the decision criteria first, compare tradeoffs with concrete examples, then give a bounded recommendation.",
+    tutorial: "Explain the end state, prerequisites, steps, common failure points, and a quick verification checklist.",
+    "documentary-analysis":
+      "Build a cause-and-effect arc: context, pressure, mechanism, consequence, counterpoint, synthesis, and source-backed ending.",
+    "story-case": "Use a controlled story arc: setup, tension, failed assumption, turning point, lesson, and payoff.",
+    "human-stakes":
+      "Start with a real human consequence, then ground emotion in specific evidence and a practical insight.",
+    "evergreen-explainer": "Teach the core mechanism with one strong example, one limitation, and one clear takeaway.",
+  };
+  return guidance[topicType] || guidance["evergreen-explainer"];
+}
+
 function buildGenerationPrompt({ topic, style, notes, sceneCount, targetSeconds, research }) {
-  const sources = normalizeSources(research.sources);
+  const sources = normalizeSources(research.sources, topic);
+  const topicType = topicTypeFor(topic, style);
+  const sourceQuality = sourceQualitySummary(sources);
   const sourceText = sources.length
-    ? sources.map((source, index) => `${index + 1}. ${source.title} (${source.host}) ${source.url}`).join("\n")
+    ? sources
+        .map(
+          (source) =>
+            `${source.id}. [${source.tier} ${source.reliability}/100] ${source.title} (${source.host}) ${source.url} -- ${source.snippet || source.reason}`,
+        )
+        .join("\n")
     : "No verified sources yet. Avoid current/factual claims unless the user provides evidence.";
   const noteText = notes || "No extra user notes yet.";
   return [
@@ -1520,6 +1848,8 @@ function buildGenerationPrompt({ topic, style, notes, sceneCount, targetSeconds,
     `Topic: ${topic}`,
     `Template: ${style}`,
     `Style guidance: ${styleGuidanceFor(style)}`,
+    `Topic type: ${topicType}`,
+    `Topic type guidance: ${topicTypeGuidanceFor(topicType)}`,
     `Scene count: exactly ${sceneCount}`,
     `Minimum runtime: ${targetSeconds} seconds`,
     "Rhythm: about 10 seconds per page, one idea per page, one fixed voice per full version.",
@@ -1529,12 +1859,17 @@ function buildGenerationPrompt({ topic, style, notes, sceneCount, targetSeconds,
     "",
     "Verified sources:",
     sourceText,
+    `Source quality: avg ${sourceQuality.average}, primary ${sourceQuality.primaryCount}, trusted ${sourceQuality.trustedCount}, weak ${sourceQuality.weakCount}`,
     "",
     "Hard rules:",
     "- Show short screen text; put detail in narration.",
     "- If sources exist, the final scene must be a sources scene and the second-to-last scene must be the conclusion.",
+    '- Each non-source scene must include a concrete claim and evidenceRefs like ["S1"] or ["S1", "S2"].',
+    "- Do not use weak sources for central claims. Weak/secondary sources can only provide context or wording checks.",
+    "- If no primary or trusted source supports a claim, phrase it as uncertainty or remove it.",
     "- Do not repeat adjacent visual layouts.",
     "- Do not use generic repeated titles.",
+    "- Reject boring drafts internally: repeated titles, repeated sentence openings, shallow claims, and scenes that do not move the story forward must be rewritten before output.",
     "- Add delivery for each scene: role, tone, pace, energy, pause, instruction.",
     "- Default voice direction is restrained Korean documentary narration, with scene-level variation through pace, pauses, tension, and certainty.",
     "- Fail boring drafts and regenerate with critique.",
@@ -1595,15 +1930,18 @@ async function createBrief(req, res) {
   }
 
   const research = await researchTopic(topic, style);
-  const sources = normalizeSources(research.sources);
+  const sources = normalizeSources(research.sources, topic);
+  const sourceQuality = sourceQualitySummary(sources);
   const brief = {
     topic,
     style,
+    topicType: topicTypeFor(topic, style),
     notes,
     sceneCount,
     targetSeconds,
-    research: { ...research, sources },
+    research: { ...research, sources, sourceQuality },
     sources,
+    sourceQuality,
     prompts: {
       generation: buildGenerationPrompt({
         topic,
@@ -1611,7 +1949,7 @@ async function createBrief(req, res) {
         notes,
         sceneCount,
         targetSeconds,
-        research: { ...research, sources },
+        research: { ...research, sources, sourceQuality },
       }),
       voice: buildVoicePrompt(style),
     },
@@ -1659,7 +1997,17 @@ async function createManifest(req, res) {
 
   if (hasOAuthRealtime() && existsSync(oauthManifestHelper)) {
     const cacheKey = createHash("sha256")
-      .update(JSON.stringify({ topic, sceneCount, style, notesHash, researchHash, helper: "oauth-manifest-v10-xhigh" }))
+      .update(
+        JSON.stringify({
+          topic,
+          sceneCount,
+          style,
+          notesHash,
+          researchHash,
+          sourceQuality: sourceQualitySummary(research.sources),
+          helper: "oauth-manifest-v11-source-evidence-xhigh",
+        }),
+      )
       .digest("hex");
     const cacheDir = join(root, ".cache/manifests");
     const requestPath = join(cacheDir, `${cacheKey}.request.json`);

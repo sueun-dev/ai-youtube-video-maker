@@ -1223,6 +1223,28 @@ mark {
   color: #16110e;
 }
 
+.skip-button {
+  min-width: 4.4rem;
+}
+
+.skip-button:disabled {
+  cursor: not-allowed;
+}
+
+.scene-counter {
+  display: inline-grid;
+  place-items: center;
+  min-height: 2.75rem;
+  min-width: 5.8rem;
+  padding: 0 0.8rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.045);
+  color: var(--hot-2);
+  font-size: 0.85rem;
+  font-weight: 900;
+}
+
 .voice-control {
   display: inline-flex;
   align-items: center;
@@ -1570,6 +1592,29 @@ input[type="range"] {
   font-size: 0.95rem;
   font-weight: 850;
   line-height: 1.35;
+}
+
+.script-evidence {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 0.45rem;
+  color: rgba(244, 241, 234, 0.62);
+  font-size: 0.74rem;
+  font-weight: 760;
+  line-height: 1.3;
+}
+
+.script-evidence b {
+  color: var(--hot-2);
+  font-size: 0.72rem;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.script-evidence span {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .script-panel li p {

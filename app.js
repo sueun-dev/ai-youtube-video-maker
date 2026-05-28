@@ -894,12 +894,41 @@ function normalizeSourceItems(sources = []) {
     ? sources
         .filter((source) => source && (source.title || source.url || source.host))
         .slice(0, 5)
-        .map((source) => ({
+        .map((source, index) => ({
+          id: source.id || `S${index + 1}`,
           title: source.title || source.host || source.url || "source",
           host: hostFor(source),
           url: source.url || "",
+          reliability: Number(source.reliability) || 0,
+          tier: source.tier || "secondary",
+          reason: source.reason || "",
         }))
     : [];
+}
+
+function sourceById(id) {
+  const normalized = String(id || "").toUpperCase();
+  const sources = normalizeSourceItems(currentManifest.sources || []);
+  return sources.find((source) => String(source.id || "").toUpperCase() === normalized) || null;
+}
+
+function evidenceRefsForScene(scene) {
+  return Array.isArray(scene?.evidenceRefs)
+    ? scene.evidenceRefs
+        .map((ref) => String(ref).toUpperCase())
+        .filter(Boolean)
+        .slice(0, 3)
+    : [];
+}
+
+function renderEvidenceLine(scene) {
+  const refs = evidenceRefsForScene(scene);
+  if (!refs.length) return "";
+  const labels = refs.map((ref) => {
+    const source = sourceById(ref);
+    return source ? `${ref} ${source.host}` : ref;
+  });
+  return `<div class="script-evidence"><b>Evidence</b><span>${escapeHtml(labels.join(" · "))}</span></div>`;
 }
 
 function renderSceneBody(scene) {
@@ -1031,9 +1060,9 @@ function renderSceneBody(scene) {
           .map(
             (source, index) => `
               <article>
-                <b>${index + 1}</b>
+                <b>${escapeHtml(source.id || String(index + 1))}</b>
                 <span>${escapeHtml(source.title)}</span>
-                <small>${escapeHtml(source.host)}</small>
+                <small>${escapeHtml(`${source.host} · ${source.tier} ${source.reliability || "?"}/100`)}</small>
               </article>
             `,
           )
@@ -1101,6 +1130,9 @@ const timecodeEl = document.querySelector("#timecode");
 const progressEl = document.querySelector("#stageProgress");
 const playBtn = document.querySelector("#playBtn");
 const playIcon = document.querySelector("#playIcon");
+const prevSceneBtn = document.querySelector("#prevSceneBtn");
+const nextSceneBtn = document.querySelector("#nextSceneBtn");
+const sceneCounter = document.querySelector("#sceneCounter");
 const restartBtn = document.querySelector("#restartBtn");
 const muteBtn = document.querySelector("#muteBtn");
 const cleanBtn = document.querySelector("#cleanBtn");
@@ -1363,6 +1395,7 @@ function renderScriptList() {
             <span>${escapeHtml(delivery.role)}</span>
           </div>
           <strong>${escapeHtml(scene.caption || scene.title || `Scene ${index + 1}`)}</strong>
+          ${renderEvidenceLine(scene)}
           <p>${escapeHtml(scene.speech || "")}</p>
         </li>
       `;
@@ -1553,7 +1586,11 @@ function renderBrief(brief) {
   if (briefTitle) briefTitle.textContent = `${brief.topic} · ${brief.style}`;
   if (briefRoute) {
     const sourceCount = Array.isArray(brief.sources) ? brief.sources.length : 0;
-    briefRoute.textContent = `${sourceCount} sources · ${brief.route || "brief"}`;
+    const quality = brief.sourceQuality || brief.research?.sourceQuality || {};
+    const qualityText = Number.isFinite(quality.average)
+      ? ` · avg ${quality.average} · primary ${quality.primaryCount || 0}`
+      : "";
+    briefRoute.textContent = `${sourceCount} sources${qualityText} · ${brief.topicType || brief.route || "brief"}`;
   }
   if (promptPreview) promptPreview.textContent = brief.prompts?.generation || "";
   if (voicePromptPreview) voicePromptPreview.textContent = brief.prompts?.voice || "";
@@ -1567,13 +1604,14 @@ function renderBrief(brief) {
     briefSources.innerHTML = sources.length
       ? sources
           .map((source, index) => {
-            const label = `${index + 1}`;
+            const label = source.id || `S${index + 1}`;
             const status = source.verified ? `checked ${source.status || ""}`.trim() : "unverified";
+            const quality = `${source.tier || "secondary"} ${source.reliability || "?"}/100`;
             return `
               <a href="${escapeHtml(source.url)}" target="_blank" rel="noreferrer">
                 <b>${label}</b>
                 <span>${escapeHtml(source.title || source.host || source.url)}</span>
-                <small>${escapeHtml(source.host || status)}</small>
+                <small>${escapeHtml(`${source.host || status} · ${quality}`)}</small>
               </a>
             `;
           })
@@ -1600,6 +1638,7 @@ function applyManifest(manifest, voice = selectedOpenAiVoice) {
     style: manifest.style || styleSelect?.value || "explainer",
     sources: Array.isArray(manifest.sources) ? manifest.sources : [],
     research: manifest.research || null,
+    sourceQuality: manifest.quality?.sourceQuality || manifest.research?.sourceQuality || null,
     quality: manifest.quality || null,
     scenes,
   };
@@ -1645,6 +1684,14 @@ function sceneForTime(time) {
   return 0;
 }
 
+function updateSkipControls() {
+  if (prevSceneBtn) prevSceneBtn.disabled = activeSceneIndex <= 0;
+  if (nextSceneBtn) nextSceneBtn.disabled = activeSceneIndex >= scenes.length - 1;
+  if (sceneCounter) {
+    sceneCounter.textContent = `${String(activeSceneIndex + 1).padStart(2, "0")} / ${String(scenes.length).padStart(2, "0")}`;
+  }
+}
+
 function updateView(options = {}) {
   const nextIndex = Math.max(0, sceneForTime(currentTime));
   if (nextIndex !== activeSceneIndex) {
@@ -1663,6 +1710,7 @@ function updateView(options = {}) {
   captionEl.textContent = scenes[activeSceneIndex].caption;
   timecodeEl.textContent = `${formatTime(currentTime)} / ${formatTime(totalDuration)}`;
   progressEl.style.width = `${Math.min(100, (currentTime / totalDuration) * 100)}%`;
+  updateSkipControls();
 }
 
 function selectedVoice() {
@@ -2001,6 +2049,22 @@ async function restart() {
   activeSceneIndex = 0;
   updateView();
   await play();
+}
+
+async function jumpToScene(index, options = {}) {
+  const targetIndex = Math.max(0, Math.min(scenes.length - 1, index));
+  const wasPlaying = isPlaying;
+  if (wasPlaying) pause();
+  else stopSpeech();
+  activeSceneIndex = targetIndex;
+  activeAudioSceneIndex = -1;
+  currentTime = sceneStarts[targetIndex] || 0;
+  updateView({ suppressSpeech: true });
+  if (wasPlaying && options.resume !== false) await play();
+}
+
+async function jumpSceneBy(delta) {
+  await jumpToScene(activeSceneIndex + delta);
 }
 
 function downloadFilename() {
@@ -2404,6 +2468,14 @@ playBtn.addEventListener("click", async () => {
   else await play();
 });
 
+prevSceneBtn?.addEventListener("click", () => {
+  jumpSceneBy(-1);
+});
+
+nextSceneBtn?.addEventListener("click", () => {
+  jumpSceneBy(1);
+});
+
 restartBtn.addEventListener("click", restart);
 
 muteBtn.addEventListener("click", () => {
@@ -2532,7 +2604,11 @@ async function prepareTopicBrief() {
     renderBrief(brief);
     if (generateBtn) generateBtn.disabled = false;
     const sourceCount = brief.sources?.length || 0;
-    setBuildStatus(`Brief ready: review prompt · ${brief.style} · sources ${sourceCount}`);
+    const quality = brief.sourceQuality || brief.research?.sourceQuality || {};
+    const qualityText = Number.isFinite(quality.average)
+      ? ` · source avg ${quality.average} · primary ${quality.primaryCount || 0}`
+      : "";
+    setBuildStatus(`Brief ready: review prompt · ${brief.style} · sources ${sourceCount}${qualityText}`);
   } catch (error) {
     console.warn(error);
     currentBrief = null;
@@ -2580,8 +2656,12 @@ async function generateVideoFromTopic(options = {}) {
     const sourceCount = manifest.sources?.length || manifest.research?.sources?.length || 0;
     const attempts = manifest.quality?.attempts || 1;
     const scoreText = Number.isFinite(score) ? ` · q${score}` : "";
+    const sourceQuality = manifest.quality?.sourceQuality || manifest.research?.sourceQuality || {};
+    const sourceQualityText = Number.isFinite(sourceQuality.average)
+      ? ` · src${sourceQuality.average}/p${sourceQuality.primaryCount || 0}`
+      : "";
     setBuildStatus(
-      `Preview ready: ${manifest.scenes.length} pages · ${style} · sources ${sourceCount}${scoreText} · attempts ${attempts} · ${manifest.route || "generated"}`,
+      `Preview ready: ${manifest.scenes.length} pages · ${style} · sources ${sourceCount}${scoreText}${sourceQualityText} · attempts ${attempts} · ${manifest.route || "generated"}`,
       manifest.quality?.passed === false ? "warn" : "ok",
     );
   } catch (error) {
@@ -2620,6 +2700,14 @@ window.addEventListener("keydown", (event) => {
     event.preventDefault();
     if (isPlaying) pause();
     else play();
+  }
+  if (event.key === "ArrowLeft") {
+    event.preventDefault();
+    jumpSceneBy(-1);
+  }
+  if (event.key === "ArrowRight") {
+    event.preventDefault();
+    jumpSceneBy(1);
   }
   if (event.key.toLowerCase() === "r") restart();
 });
