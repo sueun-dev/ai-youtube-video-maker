@@ -77,7 +77,12 @@ def stream_response_text(access_token: str, payload: dict) -> str:
     timeout = httpx.Timeout(connect=30.0, read=240.0, write=30.0, pool=30.0)
     with httpx.Client(timeout=timeout) as client:
         with client.stream("POST", f"{CODEX_BASE_URL}/responses", headers=headers, json=payload) as response:
-            response.raise_for_status()
+            try:
+                response.raise_for_status()
+            except httpx.HTTPStatusError as exc:
+                response.read()
+                detail = response.text[:1200].replace("\n", " ")
+                raise RuntimeError(f"Manifest API HTTP {response.status_code}: {detail}") from exc
             for raw_line in response.iter_lines():
                 line = raw_line.decode("utf-8") if isinstance(raw_line, bytes) else raw_line
                 if not line or not line.startswith("data:"):
@@ -114,10 +119,12 @@ def main() -> int:
     research_required = bool(request.get("researchRequired"))
     critique = str(request.get("critique") or "").strip()
     reasoning_effort = str(
-        request.get("reasoningEffort") or os.environ.get("OPENAI_MANIFEST_REASONING_EFFORT") or "xhigh"
+        request.get("reasoningEffort") or os.environ.get("OPENAI_MANIFEST_REASONING_EFFORT") or "low"
     ).strip()
-    if reasoning_effort not in {"minimal", "low", "medium", "high", "xhigh"}:
-        reasoning_effort = "xhigh"
+    if reasoning_effort == "minimal":
+        reasoning_effort = "low"
+    if reasoning_effort not in {"none", "low", "medium", "high", "xhigh"}:
+        reasoning_effort = "low"
     if not topic:
         raise ValueError("topic is empty")
 
@@ -210,7 +217,7 @@ Return this compact JSON shape. The renderer rejects generic placeholders and ca
   ]
 }}
 
-Optional layout visual fields: compare panels, spec/metrics pairs, cards, flow nodes, clock clock/note, code lines, pipeline steps, qa rows, spectrum decision/scale, clean/render frames, final route/stamp. Include them only when they help; every value must be topic-specific. Never use production/system placeholders.
+Required layout visual fields: compare panels, spec/metrics pairs, cards, flow nodes, clock clock/note, code lines, pipeline steps, qa rows, spectrum decision/scale, clean/render frames, final route/stamp, sources source list. Include the correct visual field group for every selected layout; every value must be topic-specific. Never use production/system placeholders.
 
 Rules:
 - Make it feel like natural documentary video: b-roll logic, lower-third context, slow camera movement, sparse text, one visual focus point, and scene-to-scene camera rhythm.
@@ -234,7 +241,7 @@ Rules:
 - Delivery must default to a restrained Korean documentary narrator. Vary emotion through pace, pauses, quiet tension, source-neutral precision, and resolved certainty. Do not write theatrical acting directions.
 - Every scene needs a specific angle. Avoid generic repeated titles like "핵심 정리", "중요한 변화", or "이해하기" unless the wording is made specific.
 - Internally reject boring drafts before final output: repeated sentence openings, vague claims, repeated visual logic, and low-density filler must be rewritten.
-- Make the flow feel like a real 5 minute YouTube video: hook, context, rising questions, evidence or examples, tension, synthesis, conclusion, then sources when available.
+- Make the flow feel like a real YouTube documentary video: hook, context, rising questions, evidence or examples, tension, synthesis, conclusion, then sources when available. Do not pad the runtime.
 """.strip()
 
     source = choose_runtime_source(load_sources())

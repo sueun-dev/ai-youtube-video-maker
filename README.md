@@ -67,6 +67,7 @@ OPENAI_API_KEY=
 OPENAI_OAUTH_ROOT=/absolute/path/to/openao-oauth-access
 OPENAI_REALTIME_MODEL=gpt-realtime-2
 OPENAI_REALTIME_REASONING_EFFORT=xhigh
+OPENAI_MANIFEST_REASONING_EFFORTS=low
 GEMINI_API_KEY=
 GEMINI_TTS_MODEL=gemini-3.1-flash-tts-preview
 GEMINI_TTS_VOICE=Charon
@@ -79,7 +80,9 @@ MACOS_TTS_VOICE=Yuna
 MACOS_TTS_RATE=170
 ```
 
-The local Codex OAuth bridge enables GPT-5.5 manifest generation and OpenAI Realtime TTS without placing an OpenAI API key in this project. If the OAuth bridge is not available, the app can still run with local fallback manifests and the API-key TTS route when `OPENAI_API_KEY` is set.
+The local Codex OAuth bridge enables GPT-5.5 manifest generation and OpenAI Realtime TTS without placing an OpenAI API key in this project. If the OAuth bridge is not available, AI video generation is blocked by default instead of silently rendering local/template content. Set `ALLOW_LOCAL_CONTENT_FALLBACK=1` only for emergency local previews.
+
+Manifest generation defaults to `low` reasoning because full-scene JSON manifests are slow at `high`/`xhigh`. Use `OPENAI_MANIFEST_REASONING_EFFORTS=high` or `xhigh` for slower offline-quality runs.
 
 Gemini TTS uses the Google AI Studio key and the `gemini-3.1-flash-tts-preview` model. Use `tts=gemini` in the URL to test it. The server receives Gemini PCM audio, wraps it as a 24 kHz WAV file, and feeds it into the same audio-first timeline sync.
 

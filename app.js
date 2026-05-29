@@ -1144,8 +1144,8 @@ function setBuildStatus(message, tone = "ok") {
 
 function manifestBlockReason(manifest) {
   const route = String(manifest?.route || "");
-  if (/fallback/i.test(route)) {
-    return "AI 생성이 로컬 템플릿으로 떨어졌습니다. 잘못된 주제 영상이 될 수 있어서 막았습니다.";
+  if (/fallback|local-synthesis|source-aware-local-synthesis|local-template/i.test(route)) {
+    return "AI 생성이 로컬/템플릿 합성으로 떨어졌습니다. 모든 영상 내용은 AI manifest에서 와야 해서 막았습니다.";
   }
   if (manifest?.quality?.passed === false) {
     const issues = Array.isArray(manifest.quality.issues) ? manifest.quality.issues.slice(0, 4).join(" · ") : "";

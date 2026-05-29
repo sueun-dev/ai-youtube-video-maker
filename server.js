@@ -16,10 +16,11 @@ const oauthHelper = join(root, "scripts/oauth_realtime_tts.py");
 const oauthManifestHelper = join(root, "scripts/oauth_manifest.py");
 const realtimeModel = process.env.OPENAI_REALTIME_MODEL || "gpt-realtime-2";
 const realtimeReasoningEffort = process.env.OPENAI_REALTIME_REASONING_EFFORT || "xhigh";
-const manifestHelperTimeoutMs = Math.max(30000, Number(process.env.OPENAI_MANIFEST_TIMEOUT_MS) || 60000);
-const allowTemplateFallback = process.env.ALLOW_TEMPLATE_FALLBACK === "1";
+const manifestHelperTimeoutMs = Math.max(60000, Number(process.env.OPENAI_MANIFEST_TIMEOUT_MS) || 240000);
+const allowLocalContentFallback =
+  process.env.ALLOW_LOCAL_CONTENT_FALLBACK === "1" || process.env.ALLOW_TEMPLATE_FALLBACK === "1";
 const pageSeconds = 10;
-const minSceneCount = 10;
+const minSceneCount = 8;
 const maxSceneCount = 36;
 const manifestReasoningEfforts = (
   process.env.OPENAI_MANIFEST_REASONING_EFFORTS ||
@@ -27,12 +28,12 @@ const manifestReasoningEfforts = (
   "low"
 )
   .split(",")
-  .map((item) => item.trim())
+  .map((item) => (item.trim() === "minimal" ? "low" : item.trim()))
   .filter(
     (item, index, list) =>
-      item && ["minimal", "low", "medium", "high", "xhigh"].includes(item) && list.indexOf(item) === index,
+      item && ["none", "low", "medium", "high", "xhigh"].includes(item) && list.indexOf(item) === index,
   );
-if (!manifestReasoningEfforts.length) manifestReasoningEfforts.push("high");
+if (!manifestReasoningEfforts.length) manifestReasoningEfforts.push("low");
 const ttsRequestTimeoutMs = Math.max(10000, Number(process.env.TTS_REQUEST_TIMEOUT_MS) || 45000);
 const realtimeVoices = ["marin", "cedar", "alloy", "ash", "ballad", "coral", "echo", "sage", "shimmer", "verse"];
 const openaiApiVoices = [
@@ -1498,15 +1499,6 @@ const deliveryProfiles = {
   },
 };
 
-const deliveryAlternates = {
-  evidence: ["tension", "context", "transition"],
-  synthesis: ["transition", "context", "evidence"],
-  transition: ["synthesis", "evidence", "context"],
-  tension: ["evidence", "transition", "context"],
-  context: ["evidence", "transition", "synthesis"],
-  conclusion: ["synthesis", "transition", "evidence"],
-};
-
 function deliveryRoleFor(layout, index) {
   if (index === 0 || layout === "hero") return "hook";
   if (layout === "sources") return "sources";
@@ -1690,17 +1682,93 @@ function mergeGenerationAudit(existing, next) {
   };
 }
 
+function normalizePairInput(value) {
+  if (!Array.isArray(value)) return value;
+  return value.map((item) => {
+    if (Array.isArray(item)) return item;
+    if (item && typeof item === "object") {
+      return [item.label || item.title || item.key || item.name || "", item.value || item.detail || item.text || ""];
+    }
+    return item;
+  });
+}
+
+function normalizePanelInput(value) {
+  if (!Array.isArray(value)) return value;
+  return value.map((panel) => {
+    if (!panel || typeof panel !== "object") return panel;
+    return {
+      title: panel.title || panel.label || panel.name || "",
+      lines: Array.isArray(panel.lines)
+        ? panel.lines
+        : [panel.detail, panel.image, panel.note, panel.motion].filter(Boolean),
+      tone: panel.tone,
+    };
+  });
+}
+
+function expandLayoutFields(raw, layout) {
+  const next = { ...(raw || {}) };
+  const nested = raw?.[layout] && typeof raw[layout] === "object" ? raw[layout] : {};
+  const assign = (field, ...candidates) => {
+    if (next[field] !== undefined && next[field] !== null && next[field] !== "") return;
+    const candidate = candidates.find((item) => item !== undefined && item !== null && item !== "");
+    if (candidate !== undefined) next[field] = candidate;
+  };
+
+  if (layout === "compare") {
+    if (!next.panels && (nested.leftPanel || nested.rightPanel)) {
+      next.panels = normalizePanelInput([nested.leftPanel, nested.rightPanel].filter(Boolean));
+    }
+    assign("panels", normalizePanelInput(nested.panels));
+  }
+  if (layout === "spec") assign("specs", normalizePairInput(nested.specs || nested.pairs));
+  if (layout === "cards") {
+    if (!Array.isArray(next.cards)) next.cards = nested.cards;
+    assign("cards", nested.cards);
+  }
+  if (layout === "flow") {
+    assign("nodes", nested.nodes);
+    assign("activeNode", nested.activeNode);
+  }
+  if (layout === "clock") {
+    if (next.clock && typeof next.clock === "object") {
+      next.clock = typeof nested.clock === "string" ? nested.clock : nested.clock?.label || nested.hand || nested.note;
+    }
+    assign("clock", typeof nested.clock === "string" ? nested.clock : nested.clock?.label || nested.hand);
+    assign("note", nested.note || nested.detail || nested.motion);
+  }
+  if (layout === "metrics") {
+    if (!Array.isArray(next.metrics)) next.metrics = normalizePairInput(nested.metrics || nested.pairs);
+    assign("metrics", normalizePairInput(nested.metrics || nested.pairs));
+  }
+  if (layout === "code") {
+    if (!Array.isArray(next.code)) next.code = nested.code || nested.lines;
+    assign("code", nested.code || nested.lines);
+  }
+  if (layout === "pipeline") assign("steps", nested.steps);
+  if (layout === "qa") assign("rows", normalizePairInput(nested.rows || nested.questions));
+  if (layout === "spectrum") {
+    assign("decision", nested.decision);
+    assign("scale", nested.scale);
+  }
+  if (layout === "clean" || layout === "render") assign("frames", normalizePairInput(nested.frames));
+  if (layout === "final") {
+    assign("route", nested.route);
+    assign("stamp", nested.stamp);
+  }
+  if (layout === "sources") assign("sources", nested.sources || nested.sourceList);
+  return next;
+}
+
 function generationAuditForScene(raw, layout, sources) {
+  raw = expandLayoutFields(raw, layout);
   const audit = { repairedFields: [], genericFields: [] };
   const requireField = (field, validator) => {
     const value = raw?.[field];
     if (!validator(value)) audit.repairedFields.push(field);
     if (hasGenericVisualValue(value)) audit.genericFields.push(field);
   };
-
-  if (layout === "sources") {
-    return mergeGenerationAudit(raw?.generationAudit, audit);
-  }
 
   requireField("layout", (value) => value === layout);
   requireField("title", (value) => usefulText(value, 4));
@@ -1720,7 +1788,7 @@ function generationAuditForScene(raw, layout, sources) {
       usefulText(value.pause, 8) &&
       usefulText(value.instruction, 16),
   );
-  if (Array.isArray(sources) && sources.length) {
+  if (Array.isArray(sources) && sources.length && layout !== "sources") {
     requireField("evidenceRefs", (value) => usefulEvidenceRefs(value, sources));
   }
 
@@ -1804,6 +1872,7 @@ function normalizeScene(raw, index, sceneCount, topic, options = {}) {
   else if (index === options.finalIndex || (index === sceneCount - 1 && options.sourceIndex !== index))
     layout = "final";
 
+  raw = expandLayoutFields(raw, layout);
   const generationAudit = generationAuditForScene(raw, layout, options.sources || []);
   const title = clipText(raw?.title, index === 0 ? `${topic} 한 번에 보기` : `${topic} 핵심 ${index + 1}`, 72);
   const markCandidate = clipText(raw?.mark, title.split(/\s+/)[0] || topic.slice(0, 8), 24);
@@ -1919,37 +1988,7 @@ function normalizeSources(value, topic = "") {
     .map((source, index) => ({ ...source, id: source.id || `S${index + 1}` }));
 }
 
-function makeSourcesScene(topic, sources) {
-  return normalizeScene(
-    {
-      duration: 10,
-      layout: "sources",
-      title: "출처와 확인한 근거",
-      mark: "출처",
-      caption: "출처와 확인한 근거.",
-      speech:
-        "마지막으로 이 영상의 사실 기반 주장은 화면에 보이는 출처를 기준으로 정리했습니다. 최신 내용은 원문 발표와 공식 문서를 다시 확인하는 흐름으로 마무리합니다.",
-      sources,
-    },
-    999,
-    1000,
-    topic,
-    { sourceIndex: 999 },
-  );
-}
-
-function layoutCycleFor(style) {
-  if (style === "documentary")
-    return ["hero", "metrics", "flow", "compare", "spec", "qa", "pipeline", "cards", "code", "clean", "render"];
-  if (style === "story")
-    return ["hero", "cards", "flow", "compare", "clock", "clean", "spec", "metrics", "pipeline", "render"];
-  if (style === "emotional")
-    return ["hero", "compare", "cards", "clock", "clean", "flow", "metrics", "spec", "qa", "render"];
-  return ["hero", "compare", "spec", "cards", "flow", "metrics", "code", "qa", "pipeline", "clean", "clock", "render"];
-}
-
-function repairLayoutVariety(scenes, topic, sceneCount, style, options) {
-  const cycle = layoutCycleFor(style).filter((layout) => layout !== "hero");
+function repairLayoutVariety(scenes, _topic, _sceneCount, _style, options) {
   const protectedIndexes = new Set([0, options.finalIndex, options.sourceIndex].filter(Number.isInteger));
   const usage = new Map();
   const repaired = scenes.map((scene) => ({ ...scene }));
@@ -1963,17 +2002,14 @@ function repairLayoutVariety(scenes, topic, sceneCount, style, options) {
 
     const previous = repaired[index - 1]?.layout;
     const twoBack = repaired[index - 2]?.layout;
-    const next = repaired[index + 1]?.layout;
     const tooSoon = scene.layout === previous || scene.layout === twoBack;
     const tooCommon = (usage.get(scene.layout) || 0) >= 4;
 
     if (tooSoon || tooCommon) {
-      const replacement = cycle.find(
-        (layout) => layout !== previous && layout !== twoBack && layout !== next && (usage.get(layout) || 0) < 4,
-      );
-      if (replacement) {
-        repaired[index] = normalizeScene({ ...scene, layout: replacement }, index, sceneCount, topic, options);
-      }
+      repaired[index] = {
+        ...scene,
+        generationAudit: mergeGenerationAudit(scene.generationAudit, { genericFields: ["layout"] }),
+      };
     }
     usage.set(repaired[index].layout, (usage.get(repaired[index].layout) || 0) + 1);
   }
@@ -1984,43 +2020,33 @@ function canShiftDeliveryRole(role, index) {
   return index > 0 && !["hook", "sources"].includes(role);
 }
 
-function alternateDeliveryRole(role, previousRole) {
-  return (
-    (deliveryAlternates[role] || ["context", "evidence", "transition"]).find(
-      (candidate) => candidate !== previousRole,
-    ) || role
-  );
-}
-
 function repairDeliveryVariety(scenes, style) {
   let previousRole = "";
   return scenes.map((scene, index) => {
     let delivery = normalizeDelivery(scene.delivery, scene.layout, index, scenes.length, style);
     if (delivery.role === previousRole && canShiftDeliveryRole(delivery.role, index)) {
-      delivery = normalizeDelivery(
-        { role: alternateDeliveryRole(delivery.role, previousRole) },
-        scene.layout,
-        index,
-        scenes.length,
-        style,
-      );
+      const next = {
+        ...scene,
+        delivery,
+        generationAudit: mergeGenerationAudit(scene.generationAudit, { genericFields: ["delivery"] }),
+      };
+      previousRole = delivery.role;
+      return next;
     }
     previousRole = delivery.role;
     return { ...scene, delivery };
   });
 }
 
-function repairNarrationVariety(scenes, topic, topicType, sources, hasSources) {
-  const topicLabel = shortTopicLabel(topic);
-  return scenes.map((scene, index) => {
+function repairNarrationVariety(scenes) {
+  return scenes.map((scene) => {
     if (scene.layout === "sources") return scene;
     const next = { ...scene };
-    const source = sourceHintAt(sources, index);
     if (narrationLooksTemplated(next.speech)) {
-      next.speech = fallbackSpeech(topicLabel, next.title, source, index, hasSources, topicType, next.layout);
+      next.generationAudit = mergeGenerationAudit(next.generationAudit, { genericFields: ["speech"] });
     }
     if (/확인한 범위 안에서 설명한다|확인 가능한 자료|확인된 출처|source-aware/i.test(next.claim || "")) {
-      next.claim = fallbackClaim(topicLabel, next.title, index, topicType);
+      next.generationAudit = mergeGenerationAudit(next.generationAudit, { genericFields: ["claim"] });
     }
     return next;
   });
@@ -2300,31 +2326,34 @@ function normalizeManifest(
   let normalizedScenes = padded.map((scene, index) => normalizeScene(scene, index, sceneCount, topic, options));
 
   if (sourceList.length) {
+    const finalRaw = rawScenes[finalIndex] || {};
     normalizedScenes[finalIndex] = normalizeScene(
       {
-        ...normalizedScenes[finalIndex],
+        ...finalRaw,
         layout: "final",
-        title: normalizedScenes[finalIndex]?.title || `${topic}의 결론`,
-        mark: normalizedScenes[finalIndex]?.mark || "결론",
-        caption: normalizedScenes[finalIndex]?.caption || `${topic}의 결론.`,
       },
       finalIndex,
       sceneCount,
       topic,
       options,
     );
-    normalizedScenes[sourceIndex] = makeSourcesScene(topic, sourceList);
+    const sourceRaw = rawScenes[sourceIndex] || {};
+    normalizedScenes[sourceIndex] = normalizeScene(
+      {
+        ...sourceRaw,
+        layout: "sources",
+        sources: sourceList,
+      },
+      sourceIndex,
+      sceneCount,
+      topic,
+      options,
+    );
   }
 
   normalizedScenes = repairLayoutVariety(normalizedScenes, topic, sceneCount, style, options);
   normalizedScenes = repairDeliveryVariety(normalizedScenes, style);
-  normalizedScenes = repairNarrationVariety(
-    normalizedScenes,
-    topic,
-    topicTypeFor(topic, style),
-    sourceList,
-    sourceList.length > 0,
-  );
+  normalizedScenes = repairNarrationVariety(normalizedScenes);
 
   return {
     title: clipText(payload?.title, `${topic} 설명 영상`, 96),
@@ -2761,17 +2790,17 @@ function resolveVideoPlan({ topic, style, notes = "", research = {}, requestedSc
 
   const commaParts = combined.split(/[,，、·/]|그리고|또는|및|\s-\s/g).filter((part) => part.trim().length >= 2);
   let score = 0;
-  score += Math.min(5, Math.floor(combined.length / 80));
-  score += Math.min(6, Math.max(0, commaParts.length - 2));
-  if (style === "documentary") score += 2;
+  score += Math.min(3, Math.floor(combined.length / 120));
+  score += Math.min(4, Math.max(0, commaParts.length - 2));
+  if (style === "documentary") score += 1;
   else if (["story", "emotional"].includes(style)) score += 1;
-  if (research.required) score += 2;
+  if (research.required) score += 1;
   if ((research.sources || []).length >= 3) score += 1;
   if (/초보자|순서대로|원리|구조|과정|흐름|비교|한계|위험|리스크|왜|how|why|deep|detail/i.test(combined))
-    score += 2;
+    score += 1;
   if (/간단|짧게|요약|핵심만|short|quick|brief/i.test(combined)) score -= 4;
 
-  const sceneCount = clampInteger(11 + score, minSceneCount, 28);
+  const sceneCount = clampInteger(8 + score, minSceneCount, 20);
   return {
     sceneCount,
     targetSeconds: sceneCount * pageSeconds,
@@ -2820,7 +2849,7 @@ function buildGenerationPrompt({ topic, style, notes, sceneCount, targetSeconds,
     "- Screen text must be extremely short: 2-8 words for the main overlay when possible. Put detail in narration, not on the frame.",
     "- Visual fields should describe subject objects, mechanisms, people, documents, signals, maps, interfaces, or physical metaphors from the topic. Do not write labels about the video-making system.",
     "- There are no static/default visuals. Every scene must generate its own topic-specific content, narration, and delivery.",
-    "- Optional visual fields by layout: hero=kicker+subtitle; compare=panels; spec=specs; cards=cards; flow=nodes+activeNode; clock=clock+note; metrics=metrics; code=code; pipeline=steps; qa=rows; spectrum=decision+scale; clean/render=frames; final=route+stamp; sources=sources. Include them only when useful; otherwise the renderer derives visual micro-fields only from your scene claim/speech.",
+    "- Required visual fields by selected layout: hero=kicker+subtitle; compare=panels; spec=specs; cards=cards; flow=nodes+activeNode; clock=clock+note; metrics=metrics; code=code; pipeline=steps; qa=rows; spectrum=decision+scale; clean/render=frames; final=route+stamp; sources=sources. Include the correct field group for every scene; do not rely on renderer defaults.",
     '- Never use production/system placeholder text as visual content: "audio duration", "scene json", "voice wav", "video export", "desktop 16:9", "tablet crop", "mobile stack", "10s", "300s", "SOURCE BACKED", or generic "DOCUMENTARY".',
     "- If sources exist, the final scene must be a sources scene and the second-to-last scene must be the conclusion.",
     '- Each non-source scene must include a concrete claim and evidenceRefs like ["S1"] or ["S1", "S2"].',
@@ -3030,7 +3059,7 @@ async function createManifest(req, res) {
           targetSeconds,
           lengthMode: videoPlan.lengthMode,
           efforts: manifestReasoningEfforts,
-          helper: "oauth-manifest-v22-adaptive-length",
+          helper: "oauth-manifest-v23-ai-only-content",
         }),
       )
       .digest("hex");
@@ -3127,8 +3156,8 @@ async function createManifest(req, res) {
       json(res, 200, { ...manifest, route: "codex-oauth-text" });
       return;
     } catch (error) {
-      if (!allowTemplateFallback) {
-        const message = String(error.message || error).slice(0, 500);
+      const message = String(error.message || error).slice(0, 500);
+      if (allowLocalContentFallback) {
         const { manifest, response } = createSourceAwareSynthesis(topic, sceneCount, style, research, message);
         if (manifest.quality.passed) {
           json(res, 200, response);
@@ -3149,18 +3178,37 @@ async function createManifest(req, res) {
         }
         return;
       }
-      const manifest = fallbackManifest(topic, sceneCount, style, research);
-      manifest.quality = { ...scoreManifest(manifest, research), attempts: 0, maxAttempts: 2 };
-      json(res, 200, {
-        ...manifest,
-        route: "local-template-fallback",
-        warning: String(error.message || error).slice(0, 500),
-      });
+      json(
+        res,
+        /timed out/i.test(message) ? 504 : 502,
+        manifestFailurePayload({
+          error: /timed out/i.test(message)
+            ? "AI manifest generation timed out. Local/template content fallback is disabled, so no video was generated."
+            : "AI manifest generation failed. Local/template content fallback is disabled, so no video was generated.",
+          route: /timed out/i.test(message) ? "ai-manifest-timeout" : "ai-manifest-failed",
+          warning: message,
+          research,
+        }),
+      );
       return;
     }
   }
 
-  if (!allowTemplateFallback) {
+  if (!allowLocalContentFallback) {
+    json(
+      res,
+      503,
+      manifestFailurePayload({
+        error: "AI manifest generator is unavailable. Local/template content fallback is disabled, so no video was generated.",
+        route: "ai-manifest-unavailable",
+        warning: "Configure the Codex OAuth bridge before generating AI video content.",
+        research,
+      }),
+    );
+    return;
+  }
+
+  if (allowLocalContentFallback) {
     const { manifest, response } = createSourceAwareSynthesis(
       topic,
       sceneCount,
@@ -3185,10 +3233,6 @@ async function createManifest(req, res) {
     }
     return;
   }
-
-  const manifest = fallbackManifest(topic, sceneCount, style, research);
-  manifest.quality = { ...scoreManifest(manifest, research), attempts: 0, maxAttempts: 2 };
-  json(res, 200, { ...manifest, route: "local-template-fallback" });
 }
 
 async function serveStatic(req, res) {
