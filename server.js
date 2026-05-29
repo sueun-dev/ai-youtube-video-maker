@@ -16,7 +16,7 @@ const oauthHelper = join(root, "scripts/oauth_realtime_tts.py");
 const oauthManifestHelper = join(root, "scripts/oauth_manifest.py");
 const realtimeModel = process.env.OPENAI_REALTIME_MODEL || "gpt-realtime-2";
 const realtimeReasoningEffort = process.env.OPENAI_REALTIME_REASONING_EFFORT || "xhigh";
-const manifestHelperTimeoutMs = Math.max(60000, Number(process.env.OPENAI_MANIFEST_TIMEOUT_MS) || 180000);
+const manifestHelperTimeoutMs = Math.max(30000, Number(process.env.OPENAI_MANIFEST_TIMEOUT_MS) || 60000);
 const allowTemplateFallback = process.env.ALLOW_TEMPLATE_FALLBACK === "1";
 const manifestReasoningEfforts = (
   process.env.OPENAI_MANIFEST_REASONING_EFFORTS ||
@@ -1052,6 +1052,7 @@ async function researchTopic(topic, style) {
   if (!required) return research;
 
   try {
+    const researchDeadline = Date.now() + 28000;
     const topicTokens = query.split(/\s+/).filter(Boolean);
     const latinQuery = topicTokens
       .filter((token) => /[a-z0-9]/i.test(token))
@@ -1077,15 +1078,36 @@ async function researchTopic(topic, style) {
     for (const seed of officialSourceSeeds(query)) {
       byUrl.set(seed.url, seed);
     }
+    const seeded = rankSourceCandidates([...byUrl.values()], query);
+    const seededQuality = sourceQualitySummary(seeded.slice(0, 5));
+    if (seededQuality.primaryCount >= 2) {
+      research.sources = await verifySources(seeded.slice(0, 5), query);
+      research.sourceQuality = sourceQualitySummary(research.sources);
+      research.warnings.push("Official seed sources were strong enough; web search was skipped to avoid slow generation.");
+      return research;
+    }
     for (const nextQuery of queries) {
-      const html = await fetchTextWithTimeout(`https://duckduckgo.com/html/?q=${encodeURIComponent(nextQuery)}`, {
-        headers: {
-          "user-agent": "Mozilla/5.0",
-          accept: "text/html,application/xhtml+xml",
-        },
-      });
-      for (const result of parseSearchResults(html)) {
-        if (!byUrl.has(result.url)) byUrl.set(result.url, result);
+      const timeLeft = researchDeadline - Date.now();
+      if (timeLeft <= 1200) {
+        research.warnings.push("Source search deadline reached; using the best sources collected so far.");
+        break;
+      }
+      try {
+        const html = await fetchTextWithTimeout(
+          `https://duckduckgo.com/html/?q=${encodeURIComponent(nextQuery)}`,
+          {
+            headers: {
+              "user-agent": "Mozilla/5.0",
+              accept: "text/html,application/xhtml+xml",
+            },
+          },
+          Math.min(4500, timeLeft),
+        );
+        for (const result of parseSearchResults(html)) {
+          if (!byUrl.has(result.url)) byUrl.set(result.url, result);
+        }
+      } catch (error) {
+        research.warnings.push(`Search query failed: ${String(error.message || error).slice(0, 100)}`);
       }
       const ranked = rankSourceCandidates([...byUrl.values()], query);
       if (byUrl.size >= 12 && sourceQualitySummary(ranked.slice(0, 5)).primaryCount > 0) break;
@@ -2725,6 +2747,7 @@ function buildGenerationPrompt({ topic, style, notes, sceneCount, targetSeconds,
     "Hard rules:",
     "- Make it feel like a natural documentary video, not a PowerPoint deck. Think b-roll, lower-third context, slow camera movement, sparse screen text, and one visual focus point per scene.",
     "- Frontend aesthetic baseline: avoid generic AI-looking clutter; commit to one cohesive visual mood, contextual background depth, restrained typography, and one deliberate motion idea per scene.",
+    "- Claude-style frontend direction: make frames feel like a designed editorial documentary, not a dashboard. Use warm editorial neutrals with terracotta, muted sage, and blue-gray accents; distinctive serif/sans pairing; sparse lower-thirds; subtle paper/film texture; no default Inter/Roboto look, purple-blue gradients, empty gray cards, or predictable SaaS component layouts.",
     "- Frame density gate: each scene may show only title, one short claim, one visual anchor, and one tiny lower-third. No scattered keyword clouds, card grids, or busy dashboard compositions.",
     "- Screen text must be extremely short: 2-8 words for the main overlay when possible. Put detail in narration, not on the frame.",
     "- Visual fields should describe subject objects, mechanisms, people, documents, signals, maps, interfaces, or physical metaphors from the topic. Do not write labels about the video-making system.",
@@ -2921,7 +2944,7 @@ async function createManifest(req, res) {
           researchHash,
           sourceQuality: sourceQualitySummary(research.sources),
           efforts: manifestReasoningEfforts,
-          helper: "oauth-manifest-v20-no-generic-panel-labels",
+          helper: "oauth-manifest-v21-claude-editorial",
         }),
       )
       .digest("hex");

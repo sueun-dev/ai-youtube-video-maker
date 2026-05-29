@@ -11,7 +11,9 @@
   --green: #8ad89e;
   --shadow: rgba(0, 0, 0, 0.38);
   font-family:
-    Inter,
+    "Avenir Next",
+    Avenir,
+    Seravek,
     ui-sans-serif,
     system-ui,
     -apple-system,
@@ -77,6 +79,22 @@ select {
   --hot-2: #f5bd78;
   --cool: #9bb4f1;
   --green: #8fd0a4;
+}
+
+.app-shell[data-visual-theme="claude"] .stage {
+  --hot: #c36f53;
+  --hot-2: #bf8a4d;
+  --cool: #637f8b;
+  --green: #768b67;
+  --ink: #2a241d;
+  --muted: #6f6358;
+  --line: rgba(42, 36, 29, 0.16);
+  background:
+    radial-gradient(circle at 74% 16%, rgba(99, 127, 139, 0.16), transparent 22rem),
+    radial-gradient(circle at 18% 88%, rgba(118, 139, 103, 0.16), transparent 24rem),
+    linear-gradient(135deg, rgba(195, 111, 83, 0.14), transparent 35%),
+    linear-gradient(180deg, #f4eadb, #e5d7c2 58%, #cdbda3);
+  box-shadow: 0 1.2rem 4.5rem rgba(59, 42, 28, 0.24);
 }
 
 .app-shell[data-visual-theme="cinematic"] .stage {
@@ -145,6 +163,13 @@ select {
   background:
     linear-gradient(135deg, rgba(255, 255, 255, 0.035), transparent 32%),
     repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.025) 0 1px, transparent 1px 120px), #070707;
+}
+
+.app-shell[data-visual-theme="claude"] .scene::before {
+  background:
+    radial-gradient(circle at 64% 30%, rgba(99, 127, 139, 0.09), transparent 20rem),
+    linear-gradient(90deg, rgba(195, 111, 83, 0.08), rgba(118, 139, 103, 0.055)),
+    repeating-linear-gradient(0deg, rgba(42, 36, 29, 0.038) 0 1px, transparent 1px 9px);
 }
 
 .app-shell[data-visual-theme="blueprint"] .scene::before {
@@ -670,6 +695,7 @@ button:disabled {
   animation-iteration-count: 1, infinite;
 }
 
+.app-shell[data-visual-theme="claude"] .scene,
 .app-shell[data-visual-theme="cinematic"] .scene,
 .app-shell[data-visual-theme="studio"] .scene,
 .app-shell[data-visual-theme="blueprint"] .scene,
@@ -844,7 +870,11 @@ button:disabled {
 .cinema-split,
 .cinema-terminal,
 .cinema-timecut,
-.cinema-documents {
+.cinema-documents,
+.cinema-statline,
+.cinema-notes,
+.cinema-questions,
+.cinema-spectrum {
   display: grid;
   gap: 0.65rem;
 }
@@ -1182,6 +1212,77 @@ button:disabled {
   transform: translateX(0.7rem) rotateZ(1deg);
 }
 
+.cinema-statline,
+.cinema-notes,
+.cinema-questions,
+.cinema-spectrum {
+  align-content: center;
+  min-height: min(50vh, 25rem);
+}
+
+.cinema-statline span,
+.cinema-notes article,
+.cinema-questions span {
+  position: relative;
+  display: grid;
+  gap: 0.28rem;
+  padding: 0.76rem 0.9rem;
+  border-left: 2px solid color-mix(in srgb, var(--hot), transparent 28%);
+  background: linear-gradient(90deg, rgba(0, 0, 0, 0.2), rgba(255, 255, 255, 0.045));
+}
+
+.cinema-statline b,
+.cinema-notes b,
+.cinema-questions em {
+  color: var(--hot-2);
+  font-size: clamp(0.58rem, 0.78vw, 0.76rem);
+  font-weight: 900;
+}
+
+.cinema-statline em,
+.cinema-notes span,
+.cinema-questions b {
+  color: var(--ink);
+  font-style: normal;
+  font-size: clamp(0.72rem, 0.98vw, 0.96rem);
+  font-weight: 820;
+  line-height: 1.24;
+}
+
+.cinema-notes small {
+  color: var(--muted);
+  font-size: clamp(0.62rem, 0.82vw, 0.78rem);
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.cinema-spectrum {
+  justify-items: stretch;
+  gap: 0.8rem;
+}
+
+.cinema-spectrum span {
+  color: var(--ink);
+  font-size: clamp(0.82rem, 1.15vw, 1.05rem);
+  font-weight: 850;
+  line-height: 1.28;
+}
+
+.cinema-spectrum i {
+  display: block;
+  width: 100%;
+  height: 0.36rem;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--green), var(--hot-2), var(--hot));
+}
+
+.cinema-spectrum small {
+  color: var(--muted);
+  font-size: clamp(0.66rem, 0.86vw, 0.82rem);
+  font-weight: 720;
+  line-height: 1.35;
+}
+
 .cinema-documents b {
   grid-row: span 2;
   color: var(--hot-2);
@@ -1238,6 +1339,7 @@ button:disabled {
   font-weight: 920;
 }
 
+.app-shell[data-visual-theme="claude"] .cinema-scene,
 .app-shell[data-visual-theme="cinematic"] .cinema-scene,
 .app-shell[data-visual-theme="studio"] .cinema-scene,
 .app-shell[data-visual-theme="blueprint"] .cinema-scene,
@@ -1247,6 +1349,7 @@ button:disabled {
   column-gap: clamp(0.8rem, 2.4vw, 2.5rem);
 }
 
+.app-shell[data-visual-theme="claude"] .cinema-copy,
 .app-shell[data-visual-theme="cinematic"] .cinema-copy,
 .app-shell[data-visual-theme="studio"] .cinema-copy,
 .app-shell[data-visual-theme="blueprint"] .cinema-copy,
@@ -1255,6 +1358,7 @@ button:disabled {
   gap: clamp(0.48rem, 1.05vw, 0.9rem);
 }
 
+.app-shell[data-visual-theme="claude"] .scene .cinema-copy h1,
 .app-shell[data-visual-theme="cinematic"] .scene .cinema-copy h1,
 .app-shell[data-visual-theme="studio"] .scene .cinema-copy h1,
 .app-shell[data-visual-theme="blueprint"] .scene .cinema-copy h1,
@@ -1265,6 +1369,7 @@ button:disabled {
   text-wrap: balance;
 }
 
+.app-shell[data-visual-theme="claude"] .scene .cinema-copy h2,
 .app-shell[data-visual-theme="cinematic"] .scene .cinema-copy h2,
 .app-shell[data-visual-theme="studio"] .scene .cinema-copy h2,
 .app-shell[data-visual-theme="blueprint"] .scene .cinema-copy h2,
@@ -1275,6 +1380,7 @@ button:disabled {
   text-wrap: balance;
 }
 
+.app-shell[data-visual-theme="claude"] .cinema-copy p,
 .app-shell[data-visual-theme="cinematic"] .cinema-copy p,
 .app-shell[data-visual-theme="studio"] .cinema-copy p,
 .app-shell[data-visual-theme="blueprint"] .cinema-copy p,
@@ -1286,6 +1392,7 @@ button:disabled {
   line-height: 1.48;
 }
 
+.app-shell[data-visual-theme="claude"] .cinema-kicker,
 .app-shell[data-visual-theme="cinematic"] .cinema-kicker,
 .app-shell[data-visual-theme="studio"] .cinema-kicker,
 .app-shell[data-visual-theme="blueprint"] .cinema-kicker,
@@ -1296,6 +1403,7 @@ button:disabled {
   letter-spacing: 0.08em;
 }
 
+.app-shell[data-visual-theme="claude"] .cinema-focus,
 .app-shell[data-visual-theme="cinematic"] .cinema-focus,
 .app-shell[data-visual-theme="studio"] .cinema-focus,
 .app-shell[data-visual-theme="blueprint"] .cinema-focus,
@@ -1310,6 +1418,7 @@ button:disabled {
   transform: translateY(-50%);
 }
 
+.app-shell[data-visual-theme="claude"] .cinema-visual,
 .app-shell[data-visual-theme="cinematic"] .cinema-visual,
 .app-shell[data-visual-theme="studio"] .cinema-visual,
 .app-shell[data-visual-theme="blueprint"] .cinema-visual,
@@ -1321,6 +1430,7 @@ button:disabled {
   opacity: 0.9;
 }
 
+.app-shell[data-visual-theme="claude"] .cinema-lower,
 .app-shell[data-visual-theme="cinematic"] .cinema-lower,
 .app-shell[data-visual-theme="studio"] .cinema-lower,
 .app-shell[data-visual-theme="blueprint"] .cinema-lower,
@@ -1332,6 +1442,7 @@ button:disabled {
   letter-spacing: 0.03em;
 }
 
+.app-shell[data-visual-theme="claude"] .cinema-lower b,
 .app-shell[data-visual-theme="cinematic"] .cinema-lower b,
 .app-shell[data-visual-theme="studio"] .cinema-lower b,
 .app-shell[data-visual-theme="blueprint"] .cinema-lower b,
@@ -1345,6 +1456,7 @@ button:disabled {
   white-space: nowrap;
 }
 
+.app-shell[data-visual-theme="claude"] .cinema-lower span,
 .app-shell[data-visual-theme="cinematic"] .cinema-lower span,
 .app-shell[data-visual-theme="studio"] .cinema-lower span,
 .app-shell[data-visual-theme="blueprint"] .cinema-lower span,
@@ -1355,6 +1467,7 @@ button:disabled {
   white-space: nowrap;
 }
 
+.app-shell[data-visual-theme="claude"] .cinema-field,
 .app-shell[data-visual-theme="cinematic"] .cinema-field,
 .app-shell[data-visual-theme="studio"] .cinema-field,
 .app-shell[data-visual-theme="blueprint"] .cinema-field,
@@ -1367,6 +1480,7 @@ button:disabled {
   border-left: 1px solid color-mix(in srgb, var(--cool), transparent 52%);
 }
 
+.app-shell[data-visual-theme="claude"] .cinema-field::before,
 .app-shell[data-visual-theme="cinematic"] .cinema-field::before,
 .app-shell[data-visual-theme="studio"] .cinema-field::before,
 .app-shell[data-visual-theme="blueprint"] .cinema-field::before,
@@ -1381,6 +1495,7 @@ button:disabled {
   transform: none;
 }
 
+.app-shell[data-visual-theme="claude"] .cinema-field b,
 .app-shell[data-visual-theme="cinematic"] .cinema-field b,
 .app-shell[data-visual-theme="studio"] .cinema-field b,
 .app-shell[data-visual-theme="blueprint"] .cinema-field b,
@@ -1392,6 +1507,7 @@ button:disabled {
   line-height: 1.05;
 }
 
+.app-shell[data-visual-theme="claude"] .cinema-field span,
 .app-shell[data-visual-theme="cinematic"] .cinema-field span,
 .app-shell[data-visual-theme="studio"] .cinema-field span,
 .app-shell[data-visual-theme="blueprint"] .cinema-field span,
@@ -1412,6 +1528,7 @@ button:disabled {
   animation: fieldDrift 8s ease-in-out infinite alternate;
 }
 
+.app-shell[data-visual-theme="claude"] .cinema-field span::before,
 .app-shell[data-visual-theme="cinematic"] .cinema-field span::before,
 .app-shell[data-visual-theme="studio"] .cinema-field span::before,
 .app-shell[data-visual-theme="blueprint"] .cinema-field span::before,
@@ -1423,6 +1540,7 @@ button:disabled {
   box-shadow: none;
 }
 
+.app-shell[data-visual-theme="claude"] .cinema-field i,
 .app-shell[data-visual-theme="cinematic"] .cinema-field i,
 .app-shell[data-visual-theme="studio"] .cinema-field i,
 .app-shell[data-visual-theme="blueprint"] .cinema-field i,
@@ -1433,30 +1551,56 @@ button:disabled {
   background: linear-gradient(90deg, var(--hot-2), transparent);
 }
 
+.app-shell[data-visual-theme="claude"] .cinema-trace,
 .app-shell[data-visual-theme="cinematic"] .cinema-trace,
 .app-shell[data-visual-theme="studio"] .cinema-trace,
 .app-shell[data-visual-theme="blueprint"] .cinema-trace,
 .app-shell[data-visual-theme="minimal"] .cinema-trace,
+.app-shell[data-visual-theme="claude"] .cinema-split,
 .app-shell[data-visual-theme="cinematic"] .cinema-split,
 .app-shell[data-visual-theme="studio"] .cinema-split,
 .app-shell[data-visual-theme="blueprint"] .cinema-split,
 .app-shell[data-visual-theme="minimal"] .cinema-split,
+.app-shell[data-visual-theme="claude"] .cinema-terminal,
 .app-shell[data-visual-theme="cinematic"] .cinema-terminal,
 .app-shell[data-visual-theme="studio"] .cinema-terminal,
 .app-shell[data-visual-theme="blueprint"] .cinema-terminal,
 .app-shell[data-visual-theme="minimal"] .cinema-terminal,
+.app-shell[data-visual-theme="claude"] .cinema-timecut,
 .app-shell[data-visual-theme="cinematic"] .cinema-timecut,
 .app-shell[data-visual-theme="studio"] .cinema-timecut,
 .app-shell[data-visual-theme="blueprint"] .cinema-timecut,
 .app-shell[data-visual-theme="minimal"] .cinema-timecut,
+.app-shell[data-visual-theme="claude"] .cinema-documents,
 .app-shell[data-visual-theme="cinematic"] .cinema-documents,
 .app-shell[data-visual-theme="studio"] .cinema-documents,
 .app-shell[data-visual-theme="blueprint"] .cinema-documents,
-.app-shell[data-visual-theme="minimal"] .cinema-documents {
+.app-shell[data-visual-theme="minimal"] .cinema-documents,
+.app-shell[data-visual-theme="claude"] .cinema-statline,
+.app-shell[data-visual-theme="cinematic"] .cinema-statline,
+.app-shell[data-visual-theme="studio"] .cinema-statline,
+.app-shell[data-visual-theme="blueprint"] .cinema-statline,
+.app-shell[data-visual-theme="minimal"] .cinema-statline,
+.app-shell[data-visual-theme="claude"] .cinema-notes,
+.app-shell[data-visual-theme="cinematic"] .cinema-notes,
+.app-shell[data-visual-theme="studio"] .cinema-notes,
+.app-shell[data-visual-theme="blueprint"] .cinema-notes,
+.app-shell[data-visual-theme="minimal"] .cinema-notes,
+.app-shell[data-visual-theme="claude"] .cinema-questions,
+.app-shell[data-visual-theme="cinematic"] .cinema-questions,
+.app-shell[data-visual-theme="studio"] .cinema-questions,
+.app-shell[data-visual-theme="blueprint"] .cinema-questions,
+.app-shell[data-visual-theme="minimal"] .cinema-questions,
+.app-shell[data-visual-theme="claude"] .cinema-spectrum,
+.app-shell[data-visual-theme="cinematic"] .cinema-spectrum,
+.app-shell[data-visual-theme="studio"] .cinema-spectrum,
+.app-shell[data-visual-theme="blueprint"] .cinema-spectrum,
+.app-shell[data-visual-theme="minimal"] .cinema-spectrum {
   min-height: min(34vh, 18rem);
   gap: 0.42rem;
 }
 
+.app-shell[data-visual-theme="claude"] .cinema-trace span,
 .app-shell[data-visual-theme="cinematic"] .cinema-trace span,
 .app-shell[data-visual-theme="studio"] .cinema-trace span,
 .app-shell[data-visual-theme="blueprint"] .cinema-trace span,
@@ -1465,26 +1609,46 @@ button:disabled {
   grid-template-columns: 1.4rem minmax(0, 1fr);
 }
 
+.app-shell[data-visual-theme="claude"] .cinema-trace em,
 .app-shell[data-visual-theme="cinematic"] .cinema-trace em,
 .app-shell[data-visual-theme="studio"] .cinema-trace em,
 .app-shell[data-visual-theme="blueprint"] .cinema-trace em,
 .app-shell[data-visual-theme="minimal"] .cinema-trace em,
+.app-shell[data-visual-theme="claude"] .cinema-split span,
 .app-shell[data-visual-theme="cinematic"] .cinema-split span,
 .app-shell[data-visual-theme="studio"] .cinema-split span,
 .app-shell[data-visual-theme="blueprint"] .cinema-split span,
 .app-shell[data-visual-theme="minimal"] .cinema-split span,
+.app-shell[data-visual-theme="claude"] .cinema-terminal span,
 .app-shell[data-visual-theme="cinematic"] .cinema-terminal span,
 .app-shell[data-visual-theme="studio"] .cinema-terminal span,
 .app-shell[data-visual-theme="blueprint"] .cinema-terminal span,
 .app-shell[data-visual-theme="minimal"] .cinema-terminal span,
+.app-shell[data-visual-theme="claude"] .cinema-documents span,
 .app-shell[data-visual-theme="cinematic"] .cinema-documents span,
 .app-shell[data-visual-theme="studio"] .cinema-documents span,
 .app-shell[data-visual-theme="blueprint"] .cinema-documents span,
-.app-shell[data-visual-theme="minimal"] .cinema-documents span {
+.app-shell[data-visual-theme="minimal"] .cinema-documents span,
+.app-shell[data-visual-theme="claude"] .cinema-statline em,
+.app-shell[data-visual-theme="cinematic"] .cinema-statline em,
+.app-shell[data-visual-theme="studio"] .cinema-statline em,
+.app-shell[data-visual-theme="blueprint"] .cinema-statline em,
+.app-shell[data-visual-theme="minimal"] .cinema-statline em,
+.app-shell[data-visual-theme="claude"] .cinema-notes span,
+.app-shell[data-visual-theme="cinematic"] .cinema-notes span,
+.app-shell[data-visual-theme="studio"] .cinema-notes span,
+.app-shell[data-visual-theme="blueprint"] .cinema-notes span,
+.app-shell[data-visual-theme="minimal"] .cinema-notes span,
+.app-shell[data-visual-theme="claude"] .cinema-questions b,
+.app-shell[data-visual-theme="cinematic"] .cinema-questions b,
+.app-shell[data-visual-theme="studio"] .cinema-questions b,
+.app-shell[data-visual-theme="blueprint"] .cinema-questions b,
+.app-shell[data-visual-theme="minimal"] .cinema-questions b {
   font-size: clamp(0.6rem, 0.82vw, 0.82rem);
   font-weight: 720;
 }
 
+.app-shell[data-visual-theme="claude"] .cinema-timecut b,
 .app-shell[data-visual-theme="cinematic"] .cinema-timecut b,
 .app-shell[data-visual-theme="studio"] .cinema-timecut b,
 .app-shell[data-visual-theme="blueprint"] .cinema-timecut b,
@@ -1492,12 +1656,159 @@ button:disabled {
   font-size: clamp(1.6rem, 3.4vw, 3.8rem);
 }
 
+.app-shell[data-visual-theme="claude"] .cinema-documents article,
 .app-shell[data-visual-theme="cinematic"] .cinema-documents article,
 .app-shell[data-visual-theme="studio"] .cinema-documents article,
 .app-shell[data-visual-theme="blueprint"] .cinema-documents article,
-.app-shell[data-visual-theme="minimal"] .cinema-documents article {
+.app-shell[data-visual-theme="minimal"] .cinema-documents article,
+.app-shell[data-visual-theme="claude"] .cinema-statline span,
+.app-shell[data-visual-theme="cinematic"] .cinema-statline span,
+.app-shell[data-visual-theme="studio"] .cinema-statline span,
+.app-shell[data-visual-theme="blueprint"] .cinema-statline span,
+.app-shell[data-visual-theme="minimal"] .cinema-statline span,
+.app-shell[data-visual-theme="claude"] .cinema-notes article,
+.app-shell[data-visual-theme="cinematic"] .cinema-notes article,
+.app-shell[data-visual-theme="studio"] .cinema-notes article,
+.app-shell[data-visual-theme="blueprint"] .cinema-notes article,
+.app-shell[data-visual-theme="minimal"] .cinema-notes article,
+.app-shell[data-visual-theme="claude"] .cinema-questions span,
+.app-shell[data-visual-theme="cinematic"] .cinema-questions span,
+.app-shell[data-visual-theme="studio"] .cinema-questions span,
+.app-shell[data-visual-theme="blueprint"] .cinema-questions span,
+.app-shell[data-visual-theme="minimal"] .cinema-questions span {
   padding: 0.45rem 0.55rem;
   box-shadow: none;
+}
+
+.app-shell[data-visual-theme="claude"] .cinema-backdrop {
+  background:
+    linear-gradient(105deg, rgba(255, 255, 255, 0.34), transparent 29%),
+    linear-gradient(260deg, rgba(85, 61, 42, 0.13), transparent 50%);
+  animation-duration: 13s;
+}
+
+.app-shell[data-visual-theme="claude"] .cinema-backdrop::before {
+  background:
+    repeating-linear-gradient(0deg, rgba(42, 36, 29, 0.04) 0 1px, transparent 1px 9px),
+    linear-gradient(125deg, rgba(195, 111, 83, 0.08), rgba(99, 127, 139, 0.055));
+}
+
+.app-shell[data-visual-theme="claude"] .cinema-backdrop::after {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(80, 57, 38, 0.16)),
+    radial-gradient(ellipse at center, transparent 38%, rgba(86, 60, 37, 0.22) 84%);
+}
+
+.app-shell[data-visual-theme="claude"] .cinema-backdrop span {
+  background: linear-gradient(90deg, transparent, rgba(99, 127, 139, 0.3), transparent);
+}
+
+.app-shell[data-visual-theme="claude"] .cinema-copy h1,
+.app-shell[data-visual-theme="claude"] .cinema-copy h2 {
+  color: var(--ink);
+  font-family: Georgia, "Iowan Old Style", "New York", "Apple SD Gothic Neo", serif;
+  font-weight: 760;
+  text-shadow: none;
+}
+
+.app-shell[data-visual-theme="claude"] .scene .cinema-copy h1 {
+  max-width: 14ch;
+  font-size: clamp(1.48rem, 2.62vw, 3.12rem);
+  line-height: 1.08;
+}
+
+.app-shell[data-visual-theme="claude"] .scene .cinema-copy h2 {
+  max-width: 16ch;
+  font-size: clamp(1.14rem, 1.95vw, 2.28rem);
+  line-height: 1.12;
+}
+
+.app-shell[data-visual-theme="claude"] .cinema-copy p {
+  max-width: 30rem;
+  color: #66594d;
+  font-size: clamp(0.7rem, 0.82vw, 0.88rem);
+  font-weight: 650;
+}
+
+.app-shell[data-visual-theme="claude"] .cinema-kicker {
+  color: #9e593f;
+  font-family: "Avenir Next", Avenir, ui-sans-serif, system-ui, sans-serif;
+  letter-spacing: 0.05em;
+  text-transform: none;
+}
+
+.app-shell[data-visual-theme="claude"] .cinema-focus {
+  right: clamp(1.6rem, 6vw, 6.8rem);
+  color: rgba(42, 36, 29, 0.07);
+  font-family: Georgia, "Iowan Old Style", "New York", serif;
+  font-weight: 700;
+}
+
+.app-shell[data-visual-theme="claude"] .cinema-lower {
+  color: #776b5e;
+  text-transform: none;
+  border-top-color: rgba(42, 36, 29, 0.14);
+}
+
+.app-shell[data-visual-theme="claude"] .cinema-lower b {
+  color: #2f2820;
+  font-family: "Avenir Next", Avenir, ui-sans-serif, system-ui, sans-serif;
+  font-weight: 700;
+}
+
+.app-shell[data-visual-theme="claude"] .cinema-field {
+  border-left-color: rgba(99, 127, 139, 0.3);
+}
+
+.app-shell[data-visual-theme="claude"] .cinema-field::before {
+  background: linear-gradient(135deg, rgba(99, 127, 139, 0.14), rgba(195, 111, 83, 0.08));
+  clip-path: polygon(3% 28%, 96% 0, 82% 100%, 0 78%);
+  opacity: 0.72;
+}
+
+.app-shell[data-visual-theme="claude"] .cinema-field b,
+.app-shell[data-visual-theme="claude"] .cinema-timecut b {
+  color: #9e593f;
+  font-family: Georgia, "Iowan Old Style", "New York", "Apple SD Gothic Neo", serif;
+  font-weight: 760;
+}
+
+.app-shell[data-visual-theme="claude"] .cinema-trace span,
+.app-shell[data-visual-theme="claude"] .cinema-split section,
+.app-shell[data-visual-theme="claude"] .cinema-terminal span,
+.app-shell[data-visual-theme="claude"] .cinema-documents article,
+.app-shell[data-visual-theme="claude"] .cinema-statline span,
+.app-shell[data-visual-theme="claude"] .cinema-notes article,
+.app-shell[data-visual-theme="claude"] .cinema-questions span {
+  color: #62584e;
+  border-color: rgba(99, 127, 139, 0.28);
+  background: linear-gradient(135deg, rgba(255, 250, 240, 0.36), rgba(255, 255, 255, 0.08));
+}
+
+.app-shell[data-visual-theme="claude"] .cinema-trace .active {
+  color: #2a241d;
+}
+
+.app-shell[data-visual-theme="claude"] .cinema-trace .active i {
+  background: #c36f53;
+  box-shadow: 0 0 1.3rem rgba(195, 111, 83, 0.26);
+}
+
+.app-shell[data-visual-theme="claude"] .cinema-documents b,
+.app-shell[data-visual-theme="claude"] .cinema-sources b,
+.app-shell[data-visual-theme="claude"] .cinema-statline b,
+.app-shell[data-visual-theme="claude"] .cinema-notes b,
+.app-shell[data-visual-theme="claude"] .cinema-questions em {
+  color: #9e593f;
+}
+
+.app-shell[data-visual-theme="claude"] .cinema-spectrum i {
+  background: linear-gradient(90deg, #768b67, #bf8a4d, #c36f53);
+}
+
+.app-shell[data-visual-theme="claude"] mark {
+  color: #9e593f;
+  text-shadow: none;
 }
 
 mark {

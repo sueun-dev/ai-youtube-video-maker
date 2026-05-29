@@ -1,8 +1,8 @@
 const scenes = [];
-let activeVisualTheme = "cinematic";
+let activeVisualTheme = "claude";
 
 const PAGE_SECONDS = 10;
-const CINEMATIC_THEME_IDS = new Set(["cinematic", "studio", "blueprint", "minimal"]);
+const CINEMATIC_THEME_IDS = new Set(["claude", "cinematic", "studio", "blueprint", "minimal"]);
 const CINEMA_BLOCKED_TERMS = [
   /audio duration/gi,
   /scene transition/gi,
@@ -213,6 +213,78 @@ function renderCinematicVisual(scene, terms) {
             `,
           )
           .join("")}
+      </div>
+    `;
+  }
+
+  if (scene.layout === "spec" || scene.layout === "metrics") {
+    const pairs = Array.isArray(scene.layout === "spec" ? scene.specs : scene.metrics)
+      ? (scene.layout === "spec" ? scene.specs : scene.metrics).slice(0, 3)
+      : terms.slice(0, 3).map((term, index) => [`0${index + 1}`, term]);
+    return `
+      <div class="cinema-statline">
+        ${pairs
+          .map(
+            ([label, value]) => `
+              <span>
+                <b>${escapeHtml(cleanCinemaText(label, 16))}</b>
+                <em>${escapeHtml(cleanCinemaText(value, 30))}</em>
+              </span>
+            `,
+          )
+          .join("")}
+      </div>
+    `;
+  }
+
+  if (["cards", "clean", "render"].includes(scene.layout)) {
+    const items = Array.isArray(scene.layout === "cards" ? scene.cards : scene.frames)
+      ? (scene.layout === "cards" ? scene.cards : scene.frames).slice(0, 3)
+      : terms.slice(0, 3).map((term, index) => [String(index + 1), term, ""]);
+    return `
+      <div class="cinema-notes">
+        ${items
+          .map((item, index) => {
+            const label = Array.isArray(item) ? item[0] : String(index + 1);
+            const head = Array.isArray(item) ? item[1] : item;
+            const body = Array.isArray(item) ? item[2] : "";
+            return `
+              <article>
+                <b>${escapeHtml(cleanCinemaText(label, 10))}</b>
+                <span>${escapeHtml(cleanCinemaText(head, 24))}</span>
+                ${body ? `<small>${escapeHtml(cleanCinemaText(body, 34))}</small>` : ""}
+              </article>
+            `;
+          })
+          .join("")}
+      </div>
+    `;
+  }
+
+  if (scene.layout === "qa") {
+    const rows = Array.isArray(scene.rows) ? scene.rows.slice(0, 3) : terms.slice(0, 3).map((term) => [term, "check"]);
+    return `
+      <div class="cinema-questions">
+        ${rows
+          .map(
+            ([check, result]) => `
+              <span>
+                <b>${escapeHtml(cleanCinemaText(check, 30))}</b>
+                <em>${escapeHtml(cleanCinemaText(result, 20))}</em>
+              </span>
+            `,
+          )
+          .join("")}
+      </div>
+    `;
+  }
+
+  if (scene.layout === "spectrum") {
+    return `
+      <div class="cinema-spectrum">
+        <span>${escapeHtml(cleanCinemaText(scene.decision || scene.claim || terms[0], 42))}</span>
+        <i></i>
+        <small>${escapeHtml(cleanCinemaText(scene.scale || scene.caption || terms.slice(0, 3).join(" · "), 48))}</small>
       </div>
     `;
   }
@@ -561,8 +633,20 @@ const VOICE_PREVIEW_TEXT =
   "이 문장은 목소리 비교용 샘플입니다. 같은 원고를 열 개의 목소리로 생성해서, 설명형 HTML 영상에 가장 자연스럽게 맞는 톤을 고릅니다.";
 const VOICE_PREVIEW_INSTRUCTIONS =
   "Speak in natural Korean, like a calm technical narrator. Keep it clear, steady, and not rushed. Do not sound like a customer-service greeting.";
-const VISUAL_THEME_IDS = ["cinematic", "studio", "blueprint", "paper", "terminal", "minimal"];
+const VISUAL_THEME_IDS = ["claude", "cinematic", "studio", "blueprint", "paper", "terminal", "minimal"];
 const VISUAL_THEME_PALETTES = {
+  claude: {
+    accent: "#c36f53",
+    cool: "#637f8b",
+    green: "#768b67",
+    gold: "#bf8a4d",
+    ink: "#2a241d",
+    bg: ["#f4eadb", "#e5d7c2", "#cdbda3"],
+    gridAlpha: 0.07,
+    gridStep: 210,
+    codeFill: "rgba(250,241,225,0.78)",
+    codeText: "#36464b",
+  },
   cinematic: {
     accent: "#e7a35d",
     cool: "#7aa7c7",
@@ -671,7 +755,7 @@ let providerBestVoices = {
 };
 let selectedTtsProvider = normalizeTtsProvider(params.get("tts") || "gemini");
 let selectedOpenAiVoice = BEST_OPENAI_VOICE;
-let selectedVisualTheme = normalizeVisualTheme(params.get("theme") || "cinematic");
+let selectedVisualTheme = normalizeVisualTheme(params.get("theme") || "claude");
 let warmupToken = 0;
 const audioBufferCache = new Map();
 const audioBufferPromises = new Map();
@@ -926,7 +1010,7 @@ function updateVoiceUrl() {
 }
 
 function normalizeVisualTheme(value) {
-  return VISUAL_THEME_IDS.includes(value) ? value : "cinematic";
+  return VISUAL_THEME_IDS.includes(value) ? value : "claude";
 }
 
 function applyVisualTheme(theme, options = {}) {
@@ -941,7 +1025,7 @@ function applyVisualTheme(theme, options = {}) {
 }
 
 function currentVisualPalette() {
-  return VISUAL_THEME_PALETTES[selectedVisualTheme] || VISUAL_THEME_PALETTES.studio;
+  return VISUAL_THEME_PALETTES[selectedVisualTheme] || VISUAL_THEME_PALETTES.claude;
 }
 
 function colorWithAlpha(color, alpha) {
@@ -1729,6 +1813,7 @@ function drawCinematicSceneCanvas(ctx, scene, index, sceneProgress, totalProgres
   const height = 1080;
   const theme = currentCanvasTheme();
   const { accent, cool, gold, ink, muted, softText } = theme;
+  const isClaudeEditorial = selectedVisualTheme === "claude";
   const terms = cinemaTerms(scene, 4);
   const focus = cleanCinemaText(scene.mark || terms[0] || scene.title, 12);
   const claim = cleanCinemaText(scene.claim || scene.subtitle || scene.caption || scene.speech, 72);
@@ -1741,16 +1826,16 @@ function drawCinematicSceneCanvas(ctx, scene, index, sceneProgress, totalProgres
   ctx.fillRect(0, 0, width, height);
 
   ctx.save();
-  ctx.globalAlpha = 0.16;
+  ctx.globalAlpha = isClaudeEditorial ? 0.08 : 0.16;
   ctx.translate(Math.sin(sceneProgress * Math.PI * 2) * 18, Math.cos(sceneProgress * Math.PI * 2) * 10);
   for (let i = -3; i < 14; i += 1) {
     const x = i * 190;
     const line = ctx.createLinearGradient(x, 0, x + 580, height);
     line.addColorStop(0, colorWithAlpha(cool, 0));
-    line.addColorStop(0.48, colorWithAlpha(i % 2 ? cool : accent, 0.58));
+    line.addColorStop(0.48, colorWithAlpha(i % 2 ? cool : accent, isClaudeEditorial ? 0.28 : 0.58));
     line.addColorStop(1, colorWithAlpha(accent, 0));
     ctx.strokeStyle = line;
-    ctx.lineWidth = i % 3 === 0 ? 4 : 1.5;
+    ctx.lineWidth = isClaudeEditorial ? 1.1 : i % 3 === 0 ? 4 : 1.5;
     ctx.beginPath();
     ctx.moveTo(x, height + 120);
     ctx.lineTo(x + 620, -120);
@@ -1764,11 +1849,11 @@ function drawCinematicSceneCanvas(ctx, scene, index, sceneProgress, totalProgres
   ctx.fillStyle = side;
   ctx.fillRect(1040, 0, width - 1040, height);
 
-  ctx.fillStyle = "rgba(0,0,0,0.32)";
+  ctx.fillStyle = isClaudeEditorial ? "rgba(255,249,240,0.12)" : "rgba(0,0,0,0.32)";
   ctx.fillRect(0, 0, width, height);
   const vignette = ctx.createRadialGradient(960, 530, 180, 960, 540, 970);
-  vignette.addColorStop(0, "rgba(0,0,0,0)");
-  vignette.addColorStop(1, "rgba(0,0,0,0.54)");
+  vignette.addColorStop(0, isClaudeEditorial ? "rgba(255,255,255,0)" : "rgba(0,0,0,0)");
+  vignette.addColorStop(1, isClaudeEditorial ? "rgba(76,51,32,0.24)" : "rgba(0,0,0,0.54)");
   ctx.fillStyle = vignette;
   ctx.fillRect(0, 0, width, height);
 
