@@ -14,7 +14,7 @@ Related keywords: AI video generator, AI YouTube video maker, YouTube video gene
 - Renders clean HTML scenes instead of static slides.
 - Uses one fixed voice per full video version so the narration does not drift.
 - Measures real TTS audio duration and advances scenes after the narration finishes.
-- Targets long-form YouTube videos with a minimum measured runtime of 5 minutes.
+- Chooses a content-fit runtime instead of padding every topic to 5 minutes.
 - Exports YouTube-ready 1080p video from the browser.
 
 ## Why HTML Video
@@ -26,7 +26,7 @@ Most simple AI video workflows produce a script first and then force visuals aro
 - Topic discussion step before generation
 - AI scene manifest generation
 - Verified source collection for news or factual topics
-- 36-scene long-form planning model
+- Adaptive scene planning for short, medium, or longer topics
 - Scene-level documentary delivery directions for tone, pace, pauses, tension, and conclusion weight
 - TTS narration with voice-specific full versions
 - Switchable TTS providers: OpenAI Realtime, Gemini 3.1 Flash TTS, Google Cloud TTS, local macOS Korean voices, or browser fallback

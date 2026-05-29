@@ -2472,7 +2472,7 @@ async function prepareTopicBrief() {
     const response = await fetch("/api/brief", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ topic, style, notes, sceneCount: 30, targetSeconds: 300 }),
+      body: JSON.stringify({ topic, style, notes }),
     });
     const brief = await response.json();
     if (!response.ok) throw new Error(brief.error || "Topic brief failed.");
@@ -2524,7 +2524,7 @@ async function generateVideoFromTopic(options = {}) {
     const response = await fetch("/api/generate", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ topic, voice, style, notes, sceneCount: 30, targetSeconds: 300 }),
+      body: JSON.stringify({ topic, voice, style, notes }),
     });
     const manifest = await response.json();
     if (!response.ok) throw new Error(generationErrorMessage(manifest, "Generate failed."));

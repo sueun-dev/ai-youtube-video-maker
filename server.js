@@ -18,6 +18,9 @@ const realtimeModel = process.env.OPENAI_REALTIME_MODEL || "gpt-realtime-2";
 const realtimeReasoningEffort = process.env.OPENAI_REALTIME_REASONING_EFFORT || "xhigh";
 const manifestHelperTimeoutMs = Math.max(30000, Number(process.env.OPENAI_MANIFEST_TIMEOUT_MS) || 60000);
 const allowTemplateFallback = process.env.ALLOW_TEMPLATE_FALLBACK === "1";
+const pageSeconds = 10;
+const minSceneCount = 10;
+const maxSceneCount = 36;
 const manifestReasoningEfforts = (
   process.env.OPENAI_MANIFEST_REASONING_EFFORTS ||
   process.env.OPENAI_MANIFEST_REASONING_EFFORT ||
@@ -2282,6 +2285,7 @@ function normalizeManifest(
   sceneCount = 30,
   style = "explainer",
   research = { required: false, sources: [] },
+  targetSeconds = sceneCount * pageSeconds,
 ) {
   const sourceList = normalizeSources(
     research.required ? research.sources : research.sources?.length ? research.sources : payload?.sources,
@@ -2324,10 +2328,10 @@ function normalizeManifest(
 
   return {
     title: clipText(payload?.title, `${topic} 설명 영상`, 96),
-    subtitle: clipText(payload?.subtitle, "HTML + OAuth TTS로 만든 5분 영상", 140),
+    subtitle: clipText(payload?.subtitle, "주제와 출처를 기반으로 만든 HTML TTS 영상", 140),
     topic,
     style,
-    targetSeconds: 300,
+    targetSeconds,
     sceneCount,
     sources: sourceList,
     research: {
@@ -2665,11 +2669,12 @@ function fallbackManifest(topic, sceneCount = 30, style = "explainer", research 
     );
   });
   return normalizeManifest(
-    { title: `${topic} 설명 영상`, subtitle: "주제와 출처를 기반으로 만든 5분 HTML TTS 영상", scenes },
+    { title: `${topic} 설명 영상`, subtitle: "주제와 출처를 기반으로 만든 HTML TTS 영상", scenes },
     topic,
     sceneCount,
     style,
     research,
+    sceneCount * pageSeconds,
   );
 }
 
@@ -2712,6 +2717,68 @@ function topicTypeGuidanceFor(topicType) {
   return guidance[topicType] || guidance["evergreen-explainer"];
 }
 
+function clampInteger(value, min, max) {
+  return Math.max(min, Math.min(max, Math.round(Number(value) || min)));
+}
+
+function requestedRuntimeSeconds(text) {
+  const source = String(text || "").toLowerCase();
+  const minuteMatch =
+    source.match(/(\d+(?:\.\d+)?)\s*(?:분짜리|분\s*정도|분)/i) ||
+    source.match(/(\d+(?:\.\d+)?)\s*(?:minute|minutes|min)\b/i);
+  if (minuteMatch) return Math.round(Number(minuteMatch[1]) * 60);
+  const secondMatch = source.match(/(\d+(?:\.\d+)?)\s*(?:초|second|seconds|sec)\b/i);
+  if (secondMatch) return Math.round(Number(secondMatch[1]));
+  return 0;
+}
+
+function resolveVideoPlan({ topic, style, notes = "", research = {}, requestedSceneCount, requestedTargetSeconds }) {
+  const combined = `${topic} ${notes}`.replace(/\s+/g, " ").trim();
+  const explicitRuntime = requestedRuntimeSeconds(combined);
+  const numericTarget = Number(requestedTargetSeconds);
+  const runtime = explicitRuntime || (Number.isFinite(numericTarget) && numericTarget > 0 ? numericTarget : 0);
+  const numericSceneCount = Number(requestedSceneCount);
+
+  if (Number.isFinite(numericSceneCount) && numericSceneCount > 0) {
+    const sceneCount = clampInteger(numericSceneCount, minSceneCount, maxSceneCount);
+    return {
+      sceneCount,
+      targetSeconds: runtime
+        ? clampInteger(runtime, sceneCount * 7, sceneCount * 14)
+        : sceneCount * pageSeconds,
+      lengthMode: "requested-scenes",
+    };
+  }
+
+  if (runtime) {
+    const sceneCount = clampInteger(runtime / pageSeconds, minSceneCount, maxSceneCount);
+    return {
+      sceneCount,
+      targetSeconds: sceneCount * pageSeconds,
+      lengthMode: "requested-runtime",
+    };
+  }
+
+  const commaParts = combined.split(/[,，、·/]|그리고|또는|및|\s-\s/g).filter((part) => part.trim().length >= 2);
+  let score = 0;
+  score += Math.min(5, Math.floor(combined.length / 80));
+  score += Math.min(6, Math.max(0, commaParts.length - 2));
+  if (style === "documentary") score += 2;
+  else if (["story", "emotional"].includes(style)) score += 1;
+  if (research.required) score += 2;
+  if ((research.sources || []).length >= 3) score += 1;
+  if (/초보자|순서대로|원리|구조|과정|흐름|비교|한계|위험|리스크|왜|how|why|deep|detail/i.test(combined))
+    score += 2;
+  if (/간단|짧게|요약|핵심만|short|quick|brief/i.test(combined)) score -= 4;
+
+  const sceneCount = clampInteger(11 + score, minSceneCount, 28);
+  return {
+    sceneCount,
+    targetSeconds: sceneCount * pageSeconds,
+    lengthMode: "content-fit",
+  };
+}
+
 function buildGenerationPrompt({ topic, style, notes, sceneCount, targetSeconds, research }) {
   const sources = normalizeSources(research.sources, topic);
   const topicType = topicTypeFor(topic, style);
@@ -2734,7 +2801,8 @@ function buildGenerationPrompt({ topic, style, notes, sceneCount, targetSeconds,
     `Topic type: ${topicType}`,
     `Topic type guidance: ${topicTypeGuidanceFor(topicType)}`,
     `Scene count: exactly ${sceneCount}`,
-    `Minimum runtime: ${targetSeconds} seconds`,
+    `Target runtime: about ${targetSeconds} seconds`,
+    "Length policy: choose only the amount of material the topic needs. Do not pad toward 5 minutes, do not add filler scenes, and do not stretch simple ideas.",
     "Rhythm: about 10 seconds per page, one idea per page, one fixed voice per full version.",
     "",
     "User discussion notes:",
@@ -2811,8 +2879,6 @@ async function createBrief(req, res) {
   const topic = normalizeTopicText(body.topic);
   const style = normalizeStyle(body.style);
   const notes = clipText(body.notes, "", 1200);
-  const sceneCount = Math.max(20, Math.min(36, Number(body.sceneCount) || 30));
-  const targetSeconds = Math.max(300, Number(body.targetSeconds) || 300);
 
   if (topic.length < 2) {
     json(res, 400, { error: "Missing topic." });
@@ -2822,6 +2888,15 @@ async function createBrief(req, res) {
   const research = await researchTopic(topic, style);
   const sources = normalizeSources(research.sources, topic);
   const sourceQuality = sourceQualitySummary(sources);
+  const videoPlan = resolveVideoPlan({
+    topic,
+    style,
+    notes,
+    research: { ...research, sources, sourceQuality },
+    requestedSceneCount: body.sceneCount,
+    requestedTargetSeconds: body.targetSeconds,
+  });
+  const { sceneCount, targetSeconds } = videoPlan;
   const brief = {
     topic,
     style,
@@ -2829,6 +2904,7 @@ async function createBrief(req, res) {
     notes,
     sceneCount,
     targetSeconds,
+    lengthMode: videoPlan.lengthMode,
     research: { ...research, sources, sourceQuality },
     sources,
     sourceQuality,
@@ -2909,7 +2985,6 @@ async function createManifest(req, res) {
   }
 
   const topic = normalizeTopicText(body.topic);
-  const sceneCount = Math.max(20, Math.min(36, Number(body.sceneCount) || 30));
   if (topic.length < 2) {
     json(res, 400, { error: "Missing topic." });
     return;
@@ -2922,6 +2997,15 @@ async function createManifest(req, res) {
   const style = normalizeStyle(body.style);
   const notes = clipText(body.notes, "", 1200);
   const research = await researchTopic(topic, style);
+  const videoPlan = resolveVideoPlan({
+    topic,
+    style,
+    notes,
+    research,
+    requestedSceneCount: body.sceneCount,
+    requestedTargetSeconds: body.targetSeconds,
+  });
+  const { sceneCount, targetSeconds } = videoPlan;
   const notesHash = createHash("sha256").update(notes).digest("hex").slice(0, 12);
   const researchHash = createHash("sha256")
     .update(
@@ -2943,8 +3027,10 @@ async function createManifest(req, res) {
           notesHash,
           researchHash,
           sourceQuality: sourceQualitySummary(research.sources),
+          targetSeconds,
+          lengthMode: videoPlan.lengthMode,
           efforts: manifestReasoningEfforts,
-          helper: "oauth-manifest-v21-claude-editorial",
+          helper: "oauth-manifest-v22-adaptive-length",
         }),
       )
       .digest("hex");
@@ -2959,6 +3045,7 @@ async function createManifest(req, res) {
         sceneCount,
         style,
         research,
+        targetSeconds,
       );
       const quality = { ...scoreManifest(cached, research), attempts: cached.quality?.attempts || 0, maxAttempts: 2 };
       cached.quality = quality;
@@ -2992,7 +3079,7 @@ async function createManifest(req, res) {
           JSON.stringify({
             topic,
             sceneCount,
-            targetSeconds: 300,
+            targetSeconds,
             style,
             notes,
             researchRequired: research.required,
@@ -3007,7 +3094,7 @@ async function createManifest(req, res) {
             env: { ...process.env, PYTHONPATH: `${oauthRoot}/src` },
             timeoutMs: manifestHelperTimeoutMs,
           });
-          const manifest = normalizeManifest(extractJson(stdout), topic, sceneCount, style, research);
+          const manifest = normalizeManifest(extractJson(stdout), topic, sceneCount, style, research, targetSeconds);
           const quality = scoreManifest(manifest, research);
           manifest.quality = { ...quality, attempts: attempt, maxAttempts, reasoningEffort };
           if (!bestManifest || quality.score > bestManifest.quality.score) bestManifest = manifest;

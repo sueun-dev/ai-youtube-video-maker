@@ -106,8 +106,8 @@ def main() -> int:
 
     request = json.loads(Path(sys.argv[1]).read_text())
     topic = str(request.get("topic") or "").strip()
-    scene_count = int(request.get("sceneCount") or 30)
-    target_seconds = int(request.get("targetSeconds") or 300)
+    scene_count = int(request.get("sceneCount") or 18)
+    target_seconds = int(request.get("targetSeconds") or scene_count * 10)
     style = str(request.get("style") or "explainer").strip().lower()
     notes = str(request.get("notes") or "").strip()
     sources = request.get("sources") if isinstance(request.get("sources"), list) else []
@@ -167,7 +167,7 @@ Topic type: {topic_type}
 Topic type guidance: {topic_type_guidance(topic_type)}
 User discussion notes:
 {notes if notes else "No extra user notes were provided."}
-Target runtime: at least {target_seconds} seconds.
+Target runtime: about {target_seconds} seconds. Do not pad to a fixed 5-minute runtime.
 Scene count: exactly {scene_count}.
 Rhythm: one page every about 10 seconds, one idea per page.
 Voice rule: a whole rendered version uses one fixed voice.
