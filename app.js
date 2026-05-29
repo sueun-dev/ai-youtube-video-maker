@@ -1,6 +1,28 @@
 const scenes = [];
+let activeVisualTheme = "cinematic";
 
 const PAGE_SECONDS = 10;
+const CINEMATIC_THEME_IDS = new Set(["cinematic", "studio", "blueprint", "minimal"]);
+const CINEMA_BLOCKED_TERMS = [
+  /audio duration/gi,
+  /scene transition/gi,
+  /scene json/gi,
+  /voice wav/gi,
+  /video export/gi,
+  /desktop 16:9/gi,
+  /tablet crop/gi,
+  /mobile stack/gi,
+  /source backed/gi,
+  /renderer/gi,
+  /template/gi,
+  /HTML/gi,
+  /TTS/gi,
+  /렌더러/g,
+  /제작\s*시스템/g,
+  /장면\s*전환/g,
+  /동영상\s*화면/g,
+  /페이지/g,
+];
 
 function escapeHtml(value) {
   return String(value ?? "")
@@ -31,6 +53,206 @@ function renderCards(cards = []) {
           `,
         )
         .join("")}
+    </div>
+  `;
+}
+
+function flattenSceneValues(value) {
+  if (typeof value === "string" || typeof value === "number") return [String(value)];
+  if (Array.isArray(value)) return value.flatMap((item) => flattenSceneValues(item));
+  if (value && typeof value === "object") return Object.values(value).flatMap((item) => flattenSceneValues(item));
+  return [];
+}
+
+function cleanCinemaText(value, max = 42) {
+  return CINEMA_BLOCKED_TERMS.reduce((text, pattern) => text.replace(pattern, " "), String(value || ""))
+    .replace(/[{}:[\]",]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, max);
+}
+
+function cinemaTerms(scene, max = 7) {
+  const stopwords = new Set([
+    "scene",
+    "source",
+    "video",
+    "voice",
+    "html",
+    "tts",
+    "renderer",
+    "template",
+    "topic",
+    "영상",
+    "화면",
+    "장면",
+    "제작",
+    "시스템",
+    "프롬프트",
+    "렌더러",
+    "페이지",
+    "음성",
+    "목소리",
+    "전환",
+    "핵심",
+    "근거",
+    "의미",
+    "주장",
+    "다음",
+    "관점",
+    "설명",
+    "확인",
+  ]);
+  const rawValues = flattenSceneValues([
+    scene?.mark,
+    scene?.title,
+    scene?.claim,
+    scene?.caption,
+    scene?.subtitle,
+    scene?.panels,
+    scene?.specs,
+    scene?.cards,
+    scene?.nodes,
+    scene?.metrics,
+    scene?.steps,
+    scene?.rows,
+    scene?.frames,
+    scene?.route,
+    scene?.decision,
+    scene?.stamp,
+  ]);
+  const terms = rawValues
+    .flatMap((value) => cleanCinemaText(value, 56).split(/[\s·:—|/]+/))
+    .map((value) => value.replace(/^[^0-9a-z가-힣]+|[^0-9a-z가-힣]+$/gi, ""))
+    .filter((value) => value.length >= 2 && value.length <= 16 && !stopwords.has(value.toLowerCase()))
+    .filter((value) => !/^S\d+$/i.test(value) && !/^(org|com|kr|io|net)$/i.test(value));
+  return [...new Set(terms)].slice(0, max);
+}
+
+function isCinematicTheme() {
+  return CINEMATIC_THEME_IDS.has(activeVisualTheme);
+}
+
+function evidenceLabel(scene) {
+  const refs = evidenceRefsForScene(scene);
+  if (!refs.length) return "";
+  return refs
+    .map((ref) => {
+      const source = sourceById(ref);
+      return source ? `${ref} · ${source.host}` : ref;
+    })
+    .slice(0, 2)
+    .join(" / ");
+}
+
+function renderCinematicVisual(scene, terms) {
+  if (scene.layout === "sources") {
+    const sources = normalizeSourceItems(scene.sources);
+    return `
+      <div class="cinema-documents">
+        ${sources
+          .map(
+            (source) => `
+              <article>
+                <b>${escapeHtml(source.id)}</b>
+                <span>${escapeHtml(source.title)}</span>
+                <small>${escapeHtml(source.host)}</small>
+              </article>
+            `,
+          )
+          .join("")}
+      </div>
+    `;
+  }
+
+  if (["flow", "pipeline", "final"].includes(scene.layout)) {
+    const items =
+      (scene.layout === "flow" ? scene.nodes : scene.layout === "pipeline" ? scene.steps : scene.route) || terms;
+    return `
+      <div class="cinema-trace">
+        ${items
+          .slice(0, 5)
+          .map(
+            (item, index) => `
+              <span class="${index === (scene.activeNode ?? 2) || scene.layout === "final" ? "active" : ""}">
+                <i></i><em>${escapeHtml(cleanCinemaText(item, 28))}</em>
+              </span>
+            `,
+          )
+          .join("")}
+      </div>
+    `;
+  }
+
+  if (scene.layout === "clock") {
+    return `
+      <div class="cinema-timecut">
+        <b>${escapeHtml(scene.clock || terms[0] || scene.mark)}</b>
+        <span>${escapeHtml(scene.note || scene.claim || scene.caption)}</span>
+        <i></i>
+      </div>
+    `;
+  }
+
+  if (scene.layout === "compare") {
+    const panels = Array.isArray(scene.panels) ? scene.panels.slice(0, 2) : [];
+    return `
+      <div class="cinema-split">
+        ${panels
+          .map(
+            (panel) => `
+              <section>
+                <b>${escapeHtml(panel.title)}</b>
+                <span>${escapeHtml((panel.lines || []).join(" · "))}</span>
+              </section>
+            `,
+          )
+          .join("")}
+      </div>
+    `;
+  }
+
+  if (scene.layout === "code") {
+    return `<div class="cinema-terminal">${(scene.code || terms)
+      .slice(0, 4)
+      .map((line) => `<span>${escapeHtml(cleanCinemaText(line, 58))}</span>`)
+      .join("")}</div>`;
+  }
+
+  return `
+    <div class="cinema-field">
+      ${terms
+        .slice(0, 5)
+        .map(
+          (term, index) =>
+            `<span class="${index === 0 ? "lead" : ""}" style="--x:${9 + index * 7}%; --y:${14 + index * 13}%; --delay:${index * 180}ms; --lift:${(index * -0.18).toFixed(2)}rem">${escapeHtml(term)}</span>`,
+        )
+        .join("")}
+    </div>
+  `;
+}
+
+function renderCinematicSceneBody(scene) {
+  const terms = cinemaTerms(scene);
+  const focus = scene.mark || terms[0] || scene.title;
+  const source = evidenceLabel(scene);
+  const claim = scene.claim || scene.subtitle || scene.caption || scene.speech;
+  return `
+    <div class="cinema-scene cinema-${escapeHtml(scene.layout || "scene")}">
+      <div class="cinema-backdrop" aria-hidden="true">
+        <span></span><span></span><span></span><span></span>
+      </div>
+      <div class="cinema-copy">
+        <span class="cinema-kicker">${escapeHtml(scene.kicker || currentManifest.title || scene.layout || "VIDEO")}</span>
+        ${scene.layout === "hero" ? `<h1>${renderTitle(scene)}</h1>` : `<h2>${renderTitle(scene)}</h2>`}
+        <p>${escapeHtml(cleanCinemaText(claim, 118))}</p>
+      </div>
+      <div class="cinema-focus" aria-hidden="true">${escapeHtml(cleanCinemaText(focus, 18))}</div>
+      <div class="cinema-visual">${renderCinematicVisual(scene, terms)}</div>
+      <div class="cinema-lower">
+        <span>${escapeHtml(source || scene.layout || "scene")}</span>
+        <b>${escapeHtml(scene.caption || scene.title)}</b>
+      </div>
     </div>
   `;
 }
@@ -86,6 +308,7 @@ function renderEvidenceLine(scene) {
 }
 
 function renderSceneBody(scene) {
+  if (isCinematicTheme()) return renderCinematicSceneBody(scene);
   const title = `<h2>${renderTitle(scene)}</h2>`;
   if (scene.layout === "hero") {
     return `
@@ -336,8 +559,20 @@ const VOICE_PREVIEW_TEXT =
   "이 문장은 목소리 비교용 샘플입니다. 같은 원고를 열 개의 목소리로 생성해서, 설명형 HTML 영상에 가장 자연스럽게 맞는 톤을 고릅니다.";
 const VOICE_PREVIEW_INSTRUCTIONS =
   "Speak in natural Korean, like a calm technical narrator. Keep it clear, steady, and not rushed. Do not sound like a customer-service greeting.";
-const VISUAL_THEME_IDS = ["studio", "blueprint", "paper", "terminal", "minimal"];
+const VISUAL_THEME_IDS = ["cinematic", "studio", "blueprint", "paper", "terminal", "minimal"];
 const VISUAL_THEME_PALETTES = {
+  cinematic: {
+    accent: "#e7a35d",
+    cool: "#7aa7c7",
+    green: "#90c69a",
+    gold: "#f4d18c",
+    ink: "#f5f0e8",
+    bg: ["#080a0d", "#12100d", "#06080b"],
+    gridAlpha: 0.06,
+    gridStep: 220,
+    codeFill: "rgba(8,10,14,0.9)",
+    codeText: "#d7e5f2",
+  },
   studio: {
     accent: "#e88b61",
     cool: "#8fb7ff",
@@ -434,7 +669,7 @@ let providerBestVoices = {
 };
 let selectedTtsProvider = normalizeTtsProvider(params.get("tts") || "gemini");
 let selectedOpenAiVoice = BEST_OPENAI_VOICE;
-let selectedVisualTheme = normalizeVisualTheme(params.get("theme") || "studio");
+let selectedVisualTheme = normalizeVisualTheme(params.get("theme") || "cinematic");
 let warmupToken = 0;
 const audioBufferCache = new Map();
 const audioBufferPromises = new Map();
@@ -689,11 +924,12 @@ function updateVoiceUrl() {
 }
 
 function normalizeVisualTheme(value) {
-  return VISUAL_THEME_IDS.includes(value) ? value : "studio";
+  return VISUAL_THEME_IDS.includes(value) ? value : "cinematic";
 }
 
 function applyVisualTheme(theme, options = {}) {
   selectedVisualTheme = normalizeVisualTheme(theme);
+  activeVisualTheme = selectedVisualTheme;
   appShell.dataset.visualTheme = selectedVisualTheme;
   if (visualThemeSelect) visualThemeSelect.value = selectedVisualTheme;
   if (options.updateUrl === false) return;
@@ -1486,7 +1722,188 @@ function drawCanvasTitle(ctx, scene, y = 145) {
   drawTextBlock(ctx, scene.title, 960, y, 1380, scene.layout === "hero" ? 104 : 78, { weight: 900 });
 }
 
+function drawCinematicSceneCanvas(ctx, scene, index, sceneProgress, totalProgress) {
+  const width = 1920;
+  const height = 1080;
+  const theme = currentCanvasTheme();
+  const { accent, cool, gold, ink, muted, softText } = theme;
+  const terms = cinemaTerms(scene, 6);
+  const focus = cleanCinemaText(scene.mark || terms[0] || scene.title, 18);
+  const claim = cleanCinemaText(scene.claim || scene.subtitle || scene.caption || scene.speech, 150);
+
+  const bg = ctx.createLinearGradient(0, 0, width, height);
+  bg.addColorStop(0, theme.bg[0]);
+  bg.addColorStop(0.5, theme.bg[1]);
+  bg.addColorStop(1, theme.bg[2]);
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, width, height);
+
+  ctx.save();
+  ctx.globalAlpha = 0.16;
+  ctx.translate(Math.sin(sceneProgress * Math.PI * 2) * 18, Math.cos(sceneProgress * Math.PI * 2) * 10);
+  for (let i = -3; i < 14; i += 1) {
+    const x = i * 190;
+    const line = ctx.createLinearGradient(x, 0, x + 580, height);
+    line.addColorStop(0, colorWithAlpha(cool, 0));
+    line.addColorStop(0.48, colorWithAlpha(i % 2 ? cool : accent, 0.58));
+    line.addColorStop(1, colorWithAlpha(accent, 0));
+    ctx.strokeStyle = line;
+    ctx.lineWidth = i % 3 === 0 ? 4 : 1.5;
+    ctx.beginPath();
+    ctx.moveTo(x, height + 120);
+    ctx.lineTo(x + 620, -120);
+    ctx.stroke();
+  }
+  ctx.restore();
+
+  const side = ctx.createLinearGradient(980, 0, width, 0);
+  side.addColorStop(0, colorWithAlpha(cool, 0.02));
+  side.addColorStop(1, colorWithAlpha(cool, 0.16));
+  ctx.fillStyle = side;
+  ctx.fillRect(1040, 0, width - 1040, height);
+
+  ctx.fillStyle = "rgba(0,0,0,0.32)";
+  ctx.fillRect(0, 0, width, height);
+  const vignette = ctx.createRadialGradient(960, 530, 180, 960, 540, 970);
+  vignette.addColorStop(0, "rgba(0,0,0,0)");
+  vignette.addColorStop(1, "rgba(0,0,0,0.54)");
+  ctx.fillStyle = vignette;
+  ctx.fillRect(0, 0, width, height);
+
+  ctx.textAlign = "right";
+  ctx.textBaseline = "middle";
+  ctx.font = canvasFont(scene.layout === "hero" ? 220 : 176, 950);
+  ctx.fillStyle = colorWithAlpha(ink, 0.14);
+  wrapCanvasText(ctx, focus, 660)
+    .slice(0, 2)
+    .forEach((line, lineIndex) => ctx.fillText(line, width - 94, 410 + lineIndex * 174));
+
+  ctx.textAlign = "left";
+  ctx.textBaseline = "top";
+  ctx.fillStyle = gold;
+  ctx.font = canvasFont(24, 950);
+  ctx.fillText(cleanCinemaText(scene.kicker || currentManifest.title || scene.layout, 42).toUpperCase(), 96, 72);
+  ctx.textAlign = "right";
+  ctx.fillStyle = colorWithAlpha(ink, 0.7);
+  ctx.fillText(`${String(index + 1).padStart(2, "0")} / ${String(scenes.length).padStart(2, "0")}`, width - 96, 72);
+
+  ctx.textAlign = "left";
+  const titleSize = scene.layout === "hero" ? 82 : 64;
+  const titleHeight = drawTextBlock(ctx, scene.title, 96, 210, 900, titleSize, {
+    align: "left",
+    color: ink,
+    weight: 950,
+    lineHeight: titleSize * 1.1,
+  });
+  drawTextBlock(ctx, claim, 100, Math.min(570, 235 + titleHeight), 760, 31, {
+    align: "left",
+    color: muted,
+    weight: 760,
+    lineHeight: 44,
+  });
+
+  if (scene.layout === "sources") {
+    normalizeSourceItems(scene.sources)
+      .slice(0, 5)
+      .forEach((source, sourceIndex) => {
+        const y = 400 + sourceIndex * 88;
+        ctx.strokeStyle = colorWithAlpha(cool, 0.28);
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(1050, y + 2);
+        ctx.lineTo(1720, y - 18 + (sourceIndex % 2) * 26);
+        ctx.lineTo(1740, y + 52);
+        ctx.lineTo(1070, y + 72);
+        ctx.closePath();
+        ctx.stroke();
+        ctx.fillStyle = gold;
+        ctx.font = canvasFont(24, 950);
+        ctx.fillText(source.id || String(sourceIndex + 1), 1078, y + 18);
+        ctx.fillStyle = ink;
+        ctx.font = canvasFont(24, 850);
+        wrapCanvasText(ctx, source.title, 510)
+          .slice(0, 1)
+          .forEach((line) => ctx.fillText(line, 1145, y + 16));
+      });
+  } else if (["flow", "pipeline", "final"].includes(scene.layout)) {
+    const items =
+      (scene.layout === "flow" ? scene.nodes : scene.layout === "pipeline" ? scene.steps : scene.route) || terms;
+    items.slice(0, 5).forEach((item, itemIndex) => {
+      const x = 1050 + itemIndex * 138;
+      const y = 620 - Math.sin((sceneProgress + itemIndex / 8) * Math.PI * 2) * 18;
+      ctx.fillStyle =
+        itemIndex === (scene.activeNode ?? 2) || scene.layout === "final"
+          ? colorWithAlpha(accent, 0.22)
+          : colorWithAlpha(ink, 0.065);
+      ctx.beginPath();
+      ctx.arc(x, y, itemIndex === (scene.activeNode ?? 2) ? 42 : 32, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = colorWithAlpha(cool, 0.36);
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      if (itemIndex < 4) {
+        ctx.beginPath();
+        ctx.moveTo(x + 42, y);
+        ctx.lineTo(x + 96, 620 - Math.sin((sceneProgress + (itemIndex + 1) / 8) * Math.PI * 2) * 18);
+        ctx.stroke();
+      }
+      drawTextBlock(ctx, item, x, y + 56, 140, 21, { color: softText, weight: 780 });
+    });
+  } else if (scene.layout === "clock") {
+    ctx.strokeStyle = colorWithAlpha(cool, 0.48);
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(1390, 560, 180, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(1390, 560, 118, -Math.PI / 2, -Math.PI / 2 + sceneProgress * Math.PI * 2);
+    ctx.strokeStyle = colorWithAlpha(accent, 0.74);
+    ctx.stroke();
+    drawTextBlock(ctx, scene.clock || focus, 1390, 505, 310, 46, { color: gold, weight: 950 });
+    drawTextBlock(ctx, scene.note || claim, 1390, 640, 360, 26, { color: muted, weight: 730 });
+  } else {
+    terms.slice(0, 5).forEach((term, itemIndex) => {
+      const x = 1120 + itemIndex * 54;
+      const y = 420 + itemIndex * 68 - Math.sin((sceneProgress + itemIndex / 7) * Math.PI * 2) * 14;
+      ctx.strokeStyle = colorWithAlpha(itemIndex === 0 ? accent : cool, itemIndex === 0 ? 0.74 : 0.42);
+      ctx.lineWidth = itemIndex === 0 ? 3 : 1.5;
+      ctx.beginPath();
+      ctx.moveTo(x - 58, y + 18);
+      ctx.lineTo(x + 430, y - 10);
+      ctx.stroke();
+      ctx.fillStyle = itemIndex === 0 ? colorWithAlpha(accent, 0.86) : colorWithAlpha(cool, 0.58);
+      ctx.beginPath();
+      ctx.arc(x - 58, y + 18, itemIndex === 0 ? 9 : 6, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = itemIndex === 0 ? gold : softText;
+      ctx.font = canvasFont(itemIndex === 0 ? 28 : 24, 880);
+      ctx.textAlign = "left";
+      ctx.fillText(term, x - 32, y - 2);
+    });
+  }
+
+  ctx.fillStyle = colorWithAlpha(ink, 0.13);
+  ctx.fillRect(96, height - 136, width - 192, 1);
+  ctx.fillStyle = muted;
+  ctx.font = canvasFont(22, 850);
+  ctx.textAlign = "left";
+  ctx.fillText(evidenceLabel(scene) || scene.layout || "scene", 96, height - 102);
+  ctx.textAlign = "right";
+  ctx.fillStyle = ink;
+  ctx.fillText(cleanCinemaText(scene.caption || scene.title, 72), width - 96, height - 102);
+
+  const progress = Math.max(0, Math.min(1, totalProgress));
+  ctx.fillStyle = colorWithAlpha(ink, 0.14);
+  ctx.fillRect(96, height - 70, width - 192, 5);
+  ctx.fillStyle = accent;
+  ctx.fillRect(96, height - 70, (width - 192) * progress, 5);
+}
+
 function drawSceneCanvas(ctx, scene, index, sceneProgress, totalProgress) {
+  if (isCinematicTheme()) {
+    drawCinematicSceneCanvas(ctx, scene, index, sceneProgress, totalProgress);
+    return;
+  }
   const width = 1920;
   const height = 1080;
   const theme = currentCanvasTheme();

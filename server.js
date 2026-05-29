@@ -1271,7 +1271,7 @@ function sceneVisualContext(scene, topic, sources = []) {
   return {
     topicLabel,
     sourceLabel,
-    terms: terms.length ? terms : [topicLabel, "검증", "기록", "전환", "판단"],
+    terms: terms.length ? terms : [topicLabel, "구조", "원리", "한계", "결론"],
     phrases: phrases.length ? phrases : [scene.claim || scene.caption || scene.title, scene.speech || topicLabel],
     primary,
   };
@@ -1308,11 +1308,11 @@ function visualFallbacksFor(scene, topic, sources, index, sceneCount) {
       ["질문", third || "다음 판단"],
     ],
     code: [
-      `claim: ${clipText(scene.claim || p1, scene.title, 54)}`,
-      `source: ${source}`,
-      `term: ${first}`,
-      `check: ${clipText(p2 || p1, scene.title, 54)}`,
-      `next: ${clipText(p3 || scene.caption, context.topicLabel, 54)}`,
+      clipText(scene.claim || p1, scene.title, 54),
+      clipText(source, context.topicLabel, 54),
+      clipText(`${first || context.topicLabel} -> ${second || context.topicLabel}`, context.topicLabel, 54),
+      clipText(p2 || p1, scene.title, 54),
+      clipText(p3 || scene.caption, context.topicLabel, 54),
     ],
     steps: [p1, p2, p3, p4, scene.title]
       .filter(Boolean)
@@ -1324,13 +1324,23 @@ function visualFallbacksFor(scene, topic, sources, index, sceneCount) {
       ["다음", clipText(p2 || scene.caption, scene.title, 34)],
     ],
     decision: clipText(scene.claim || p1 || scene.speech, scene.title, 96),
-    stamp: clipText(`${first || context.topicLabel} ${index >= sceneCount - 2 ? "결론" : "확인"}`, context.topicLabel, 32),
+    stamp: clipText(
+      `${first || context.topicLabel} ${index >= sceneCount - 2 ? "결론" : "확인"}`,
+      context.topicLabel,
+      32,
+    ),
     frames: [
       ["핵심", clipText(first, context.topicLabel, 36)],
       ["근거", clipText(source, context.topicLabel, 36)],
       ["의미", clipText(p2 || p1, scene.title, 48)],
     ],
-    route: [context.topicLabel, first, second, third, index >= sceneCount - 2 ? `${context.topicLabel} 결론` : "다음 판단"]
+    route: [
+      context.topicLabel,
+      first,
+      second,
+      third,
+      index >= sceneCount - 2 ? `${context.topicLabel} 결론` : "다음 판단",
+    ]
       .filter(Boolean)
       .slice(0, 5),
   };
@@ -1346,7 +1356,8 @@ function visualFieldsForLayout(layout, visualFallbacks) {
   if (layout === "compare") return { panels: visualFallbacks.panels };
   if (layout === "spec") return { specs: visualFallbacks.specs };
   if (layout === "cards") return { cards: visualFallbacks.cards };
-  if (layout === "flow") return { nodes: visualFallbacks.nodes, activeNode: Math.min(2, visualFallbacks.nodes.length - 1) };
+  if (layout === "flow")
+    return { nodes: visualFallbacks.nodes, activeNode: Math.min(2, visualFallbacks.nodes.length - 1) };
   if (layout === "clock") return { clock: visualFallbacks.clock, note: visualFallbacks.note };
   if (layout === "metrics") return { metrics: visualFallbacks.metrics };
   if (layout === "code") return { code: visualFallbacks.code };
@@ -1553,20 +1564,26 @@ function usefulCards(value) {
   if (!Array.isArray(value)) return false;
   const usable = value.filter(
     (item) =>
-      Array.isArray(item) && item.length >= 3 && usefulText(item[0], 1) && usefulText(item[1], 2) && usefulText(item[2], 3),
+      Array.isArray(item) &&
+      item.length >= 3 &&
+      usefulText(item[0], 1) &&
+      usefulText(item[1], 2) &&
+      usefulText(item[2], 3),
   );
   return usable.length >= 3;
 }
 
 function usefulPanels(value) {
   if (!Array.isArray(value) || value.length < 2) return false;
-  return value.slice(0, 2).every(
-    (panel) =>
-      panel &&
-      usefulText(panel.title, 2) &&
-      Array.isArray(panel.lines) &&
-      panel.lines.filter((line) => usefulText(line, 2)).length >= 2,
-  );
+  return value
+    .slice(0, 2)
+    .every(
+      (panel) =>
+        panel &&
+        usefulText(panel.title, 2) &&
+        Array.isArray(panel.lines) &&
+        panel.lines.filter((line) => usefulText(line, 2)).length >= 2,
+    );
 }
 
 function usefulEvidenceRefs(value, sources) {
@@ -1578,7 +1595,10 @@ function usefulEvidenceRefs(value, sources) {
       typeof item === "number"
         ? `S${item}`
         : typeof item === "string"
-          ? item.trim().toUpperCase().replace(/^(\d+)$/, "S$1")
+          ? item
+              .trim()
+              .toUpperCase()
+              .replace(/^(\d+)$/, "S$1")
           : item?.id || item?.sourceId || "";
     return sourceIds.has(String(ref).trim().toUpperCase());
   });
@@ -2114,9 +2134,7 @@ function scoreManifest(manifest, research) {
   const visualQuality = sceneVisualQualitySummary(scenes);
   if (visualQuality.criticalRepairedFields.length) {
     score -= Math.min(42, visualQuality.criticalRepairedFields.length * 10);
-    issues.push(
-      `Core generated fields are missing: ${visualQuality.criticalRepairedFields.slice(0, 3).join(" | ")}.`,
-    );
+    issues.push(`Core generated fields are missing: ${visualQuality.criticalRepairedFields.slice(0, 3).join(" | ")}.`);
   }
   if (visualQuality.missingVisualFields.length) {
     score -= Math.min(36, visualQuality.missingVisualFields.length * 8);
@@ -2128,7 +2146,9 @@ function scoreManifest(manifest, research) {
   }
   if (visualQuality.duplicateVisualValues.length > 4) {
     score -= Math.min(12, visualQuality.duplicateVisualValues.length * 2);
-    issues.push(`Repeated visual values are too common: ${visualQuality.duplicateVisualValues.slice(0, 3).join(" | ")}.`);
+    issues.push(
+      `Repeated visual values are too common: ${visualQuality.duplicateVisualValues.slice(0, 3).join(" | ")}.`,
+    );
   }
 
   if (missingEvidenceRefs) {
@@ -2331,7 +2351,7 @@ function fallbackSpeech(topicLabel, title, source, index, hasSources, topicType 
   const transitions = [
     `먼저 ${topicLabel}${josa(topicLabel, "을", "를")} ${angle} 관점에서 좁혀 봅니다.`,
     `여기서 중요한 건 ${title}${josa(title, "을", "를")} 하나의 주장으로 고정하는 일입니다.`,
-    `이 장면은 ${sourceLead}${josa(sourceLead, "을", "를")} 바탕으로, 화면에는 결론만 남기고 설명은 음성으로 넘깁니다.`,
+    `이 단계는 ${sourceLead}${josa(sourceLead, "을", "를")} 바탕으로, 확인된 단서와 해석을 분리합니다.`,
     `다음 판단은 ${angle}${josa(angle, "을", "를")} 기준으로 갈립니다.`,
   ];
   if (/결론|정리/.test(title)) {
@@ -2347,6 +2367,98 @@ function fallbackSpeech(topicLabel, title, source, index, hasSources, topicType 
   return `${transitions[index % transitions.length]} ${sourceLine} 시청자가 다음 장면에서 확인할 질문을 하나만 남깁니다.`;
 }
 
+const fallbackLayoutFlow = [
+  "compare",
+  "spec",
+  "flow",
+  "cards",
+  "metrics",
+  "qa",
+  "pipeline",
+  "clean",
+  "clock",
+  "render",
+  "code",
+];
+
+const fallbackBeatPhrases = {
+  "current-news": [
+    "공식 확인과 해석을 먼저 분리한다",
+    "사용자에게 바로 보이는 변화를 좁힌다",
+    "기업과 개발자가 확인할 조건을 본다",
+    "숫자로 말할 수 있는 범위만 남긴다",
+    "아직 비어 있는 정보를 따로 둔다",
+    "다음 발표에서 확인할 질문을 만든다",
+  ],
+  comparison: [
+    "선택 기준을 먼저 고정한다",
+    "장점이 실제 사용에서 바뀌는 지점을 본다",
+    "제한이 드러나는 조건을 분리한다",
+    "누구에게 맞는 선택인지 좁힌다",
+    "예외 상황에서 결론이 흔들리는지 본다",
+    "마지막 판단 기준을 한 문장으로 남긴다",
+  ],
+  tutorial: [
+    "끝 상태를 먼저 고정한다",
+    "준비 조건이 빠지면 막히는 지점을 본다",
+    "첫 실행에서 확인할 신호를 정한다",
+    "실패했을 때 돌아갈 기준을 남긴다",
+    "검증 결과가 맞는지 다시 좁힌다",
+    "다음 단계로 넘어갈 조건을 만든다",
+  ],
+  default: [
+    "처음에 무엇이 바뀌는지 본다",
+    "작은 단위가 전체 판단을 만드는 방식을 본다",
+    "참여자가 맡는 역할을 나눈다",
+    "검증이 필요한 순간을 고정한다",
+    "연결이 다음 결과를 만드는 조건을 본다",
+    "속도와 비용이 생기는 이유를 분리한다",
+    "강점이 약점으로 바뀌는 조건을 찾는다",
+    "실패하거나 공격받을 수 있는 지점을 본다",
+    "사용자가 실제로 체감하는 변화를 좁힌다",
+    "비유로 이해하면 맞는 부분을 남긴다",
+    "비유가 틀리는 부분을 걷어낸다",
+    "규칙 하나가 전체 신뢰로 커지는 과정을 본다",
+    "숫자가 말해 주는 운영 현실을 분리한다",
+    "큰 시스템으로 커질 때 생기는 병목을 본다",
+    "누가 무엇을 확인할 수 있는지 나눈다",
+    "확인하지 못하는 영역을 따로 둔다",
+    "기술보다 중요한 경계 조건을 본다",
+    "가장 흔한 오해를 한 번 끊는다",
+    "현실에서 작동하려면 필요한 조건을 본다",
+    "남는 한계와 다음 질문을 분리한다",
+    "초보자가 기억할 한 문장을 만든다",
+    "실제 사례로 돌아와 흐름을 다시 본다",
+    "중요한 단어를 행동 흐름으로 바꾼다",
+    "결론 전에 반대 질문을 먼저 세운다",
+    "마지막 판단을 적용 범위 안에 묶는다",
+    "다음 장면으로 넘길 핵심만 남긴다",
+    "보이는 결과와 보이지 않는 처리를 나눈다",
+    "작동 순서를 다시 이어 붙인다",
+    "신뢰가 생기는 순간과 사라지는 순간을 비교한다",
+    "끝까지 남는 현실적 제약을 확인한다",
+  ],
+};
+
+function fallbackBeatPhrase(topicType, index) {
+  const list =
+    fallbackBeatPhrases[topicType] ||
+    (["documentary-analysis", "story-case", "human-stakes", "evergreen-explainer"].includes(topicType)
+      ? fallbackBeatPhrases.default
+      : fallbackBeatPhrases.default);
+  return list[index % list.length];
+}
+
+function fallbackPlanItem(topicLabel, variantTerms, topicType, index) {
+  if (index === 0) return ["hero", `${topicLabel}: 실제 흐름으로 본다`, "실제 흐름"];
+  const layout = fallbackLayoutFlow[(index - 1) % fallbackLayoutFlow.length];
+  const term = variantTerms[(index - 1) % variantTerms.length] || topicLabel;
+  const phrase = fallbackBeatPhrase(topicType, index - 1);
+  const title = clipText(`${term}: ${phrase}`, `${topicLabel}: ${phrase}`, 72);
+  const mark = title.includes(term) ? term : title.split(/\s+/)[0] || topicLabel;
+  return [layout, title, mark];
+}
+
 function fallbackManifest(topic, sceneCount = 30, style = "explainer", research = { required: false, sources: [] }) {
   const topicLabel = shortTopicLabel(topic);
   const sourceList = normalizeSources(research.sources, topic);
@@ -2360,9 +2472,9 @@ function fallbackManifest(topic, sceneCount = 30, style = "explainer", research 
       ["cards", "영향은 사용자, 개발자, 기업으로 갈린다", "세 갈래"],
       ["flow", "기능 이름보다 사용 흐름이 중요하다", "사용 흐름"],
       ["metrics", "일정과 제공 범위는 숫자로 따로 둔다", "숫자"],
-      ["qa", "출처가 약한 문장은 주장으로 쓰지 않는다", "약한 출처"],
+      ["qa", "확실한 사실과 아직 모르는 부분을 나눈다", "불확실성"],
       ["pipeline", "근거에서 해석으로 한 단계씩 이동한다", "근거"],
-      ["clean", "화면은 확인된 한 문장만 보여준다", "한 문장"],
+      ["clean", "큰 변화는 사용자의 다음 행동으로 좁혀진다", "다음 행동"],
       ["clock", "아직 모르는 부분을 중간에 남긴다", "불확실성"],
     ],
     comparison: [
@@ -2382,33 +2494,35 @@ function fallbackManifest(topic, sceneCount = 30, style = "explainer", research 
     ],
   };
   const defaultPlan = [
-    ["hero", `${topicLabel}: 왜 지금 중요한가`, "왜 지금"],
-    ["compare", "겉으로 보이는 변화와 실제 구조를 나눈다", "구조"],
-    ["spec", "주장을 작게 쪼개면 검증이 쉬워진다", "검증"],
-    ["cards", "핵심은 맥락, 원리, 한계로 나뉜다", "맥락"],
-    ["flow", "좋은 설명은 질문을 따라 이동한다", "질문"],
-    ["metrics", "시청자가 기억할 숫자를 따로 둔다", "숫자"],
-    ["qa", "약한 근거는 낮은 확신으로 말한다", "낮은 확신"],
-    ["pipeline", "사실, 해석, 결론을 섞지 않는다", "분리"],
-    ["clean", "한 장면에는 한 주장만 남긴다", "한 주장"],
-    ["clock", "전환 전에는 다음 질문을 만든다", "다음 질문"],
+    ["hero", `${topicLabel}: 실제 흐름으로 본다`, "실제 흐름"],
+    ["compare", "겉으로 보이는 모습과 내부 구조를 나눈다", "내부 구조"],
+    ["spec", "가장 작은 단위가 전체 신뢰를 만든다", "작은 단위"],
+    ["cards", "참여자, 기록, 검증이 서로 다른 역할을 맡는다", "세 역할"],
+    ["flow", "하나의 사건은 다음 단계의 조건이 된다", "다음 단계"],
+    ["metrics", "속도, 비용, 신뢰의 균형이 매번 바뀐다", "균형"],
+    ["qa", "강점보다 먼저 깨질 수 있는 지점을 확인한다", "깨질 지점"],
+    ["pipeline", "입력, 처리, 확인, 기록이 순서대로 이어진다", "순서"],
+    ["clean", "복잡한 구조는 하나의 변화로 압축된다", "압축"],
+    ["clock", "마지막에는 남는 질문과 한계가 드러난다", "한계"],
   ];
   const basePlan = planByType[topicType] || defaultPlan;
-  const variantTerms = topicKeywords(topic);
-  const heroPlan = basePlan.find(([layout]) => layout === "hero") || ["hero", `${topicLabel}: 왜 지금 중요한가`, "왜 지금"];
-  const nonHeroPlan = basePlan.filter(([layout]) => layout !== "hero");
+  const fallbackTermStopwords = new Set(["작동", "원리", "방법", "이유", "소개", "정리", "guide", "how"]);
+  const variantTerms = topicKeywords(topic).filter((term) => !fallbackTermStopwords.has(term.toLowerCase()));
+  const heroPlan = basePlan.find(([layout]) => layout === "hero") || [
+    "hero",
+    `${topicLabel}: 왜 지금 중요한가`,
+    "왜 지금",
+  ];
   const plan = Array.from({ length: Math.max(1, sceneCount - 1) }, (_, index) =>
-    index === 0 ? heroPlan : nonHeroPlan[(index - 1) % nonHeroPlan.length],
+    index === 0
+      ? heroPlan
+      : fallbackPlanItem(topicLabel, variantTerms.length ? variantTerms : [topicLabel], topicType, index),
   );
   plan[sceneCount - 2] = ["final", `${topicLabel}의 결론`, "결론"];
   const scenes = Array.from({ length: sceneCount }, (_, index) => {
     const [layout, baseTitle, baseMark] =
       index === sceneCount - 1 ? ["final", `${topicLabel}의 결론`, "결론"] : plan[index % plan.length];
-    const variant = variantTerms[index % variantTerms.length] || `관점 ${index + 1}`;
-    const title =
-      index > 0 && index < sceneCount - 2 && !normalizeKeywordText(baseTitle).includes(normalizeKeywordText(topicLabel))
-        ? clipText(`${topicLabel} ${String(index + 1).padStart(2, "0")} ${variant}: ${baseTitle}`, baseTitle, 72)
-        : baseTitle;
+    const title = baseTitle;
     const titleTerms = contentTermsFrom(`${title} ${topic}`, 6).filter((term) => title.includes(term));
     const mark =
       !isGenericVisualText(baseMark) && title.includes(baseMark)
@@ -2423,7 +2537,13 @@ function fallbackManifest(topic, sceneCount = 30, style = "explainer", research 
       : [];
     const speech = fallbackSpeech(topicLabel, title, source, index, hasSources, topicType);
     const role = deliveryRoleFor(layout, index);
-    const delivery = normalizeDelivery({ role, ...(deliveryProfiles[role] || deliveryProfiles.context) }, layout, index, sceneCount, style);
+    const delivery = normalizeDelivery(
+      { role, ...(deliveryProfiles[role] || deliveryProfiles.context) },
+      layout,
+      index,
+      sceneCount,
+      style,
+    );
     const claim = clipText(
       source
         ? `${title}는 ${source.host || "확인 가능한 자료"}에서 확인한 범위 안에서 설명한다.`
@@ -2537,7 +2657,9 @@ function buildGenerationPrompt({ topic, style, notes, sceneCount, targetSeconds,
     `Source quality: avg ${sourceQuality.average}, primary ${sourceQuality.primaryCount}, trusted ${sourceQuality.trustedCount}, weak ${sourceQuality.weakCount}`,
     "",
     "Hard rules:",
-    "- Show short screen text; put detail in narration.",
+    "- Make it feel like a natural documentary video, not a PowerPoint deck. Think b-roll, lower-third context, slow camera movement, sparse screen text, and one visual focus point per scene.",
+    "- Screen text must be extremely short: 2-8 words for the main overlay when possible. Put detail in narration, not on the frame.",
+    "- Visual fields should describe subject objects, mechanisms, people, documents, signals, maps, interfaces, or physical metaphors from the topic. Do not write labels about the video-making system.",
     "- There are no static/default visuals. Every scene must generate its own topic-specific content, narration, and delivery.",
     "- Optional visual fields by layout: hero=kicker+subtitle; compare=panels; spec=specs; cards=cards; flow=nodes+activeNode; clock=clock+note; metrics=metrics; code=code; pipeline=steps; qa=rows; spectrum=decision+scale; clean/render=frames; final=route+stamp; sources=sources. Include them only when useful; otherwise the renderer derives visual micro-fields only from your scene claim/speech.",
     '- Never use production/system placeholder text as visual content: "audio duration", "scene json", "voice wav", "video export", "desktop 16:9", "tablet crop", "mobile stack", "10s", "300s", "SOURCE BACKED", or generic "DOCUMENTARY".',
@@ -2547,6 +2669,7 @@ function buildGenerationPrompt({ topic, style, notes, sceneCount, targetSeconds,
     "- If no primary or trusted source supports a claim, phrase it as uncertainty or remove it.",
     "- Do not repeat adjacent visual layouts.",
     "- Do not use generic repeated titles.",
+    "- Avoid slide-deck language and production-system language. The viewer should feel they are watching a finished video, not a prompt, renderer demo, or presentation.",
     "- Reject boring drafts internally: repeated titles, repeated sentence openings, shallow claims, and scenes that do not move the story forward must be rewritten before output.",
     "- Add delivery for each scene: role, tone, pace, energy, pause, instruction.",
     "- Default voice direction is restrained Korean documentary narration, with scene-level variation through pace, pauses, tension, and certainty.",
@@ -2661,7 +2784,12 @@ function qualityFailureMessage(quality) {
 
 function createSourceAwareSynthesis(topic, sceneCount, style, research, warning = "") {
   const manifest = fallbackManifest(topic, sceneCount, style, research);
-  const quality = { ...scoreManifest(manifest, research), attempts: 0, maxAttempts: 0, reasoningEffort: "local-synthesis" };
+  const quality = {
+    ...scoreManifest(manifest, research),
+    attempts: 0,
+    maxAttempts: 0,
+    reasoningEffort: "local-synthesis",
+  };
   manifest.quality = quality;
   const warningText = /429|Too Many Requests/i.test(warning)
     ? "AI manifest route is rate-limited; source-aware local synthesis was used."

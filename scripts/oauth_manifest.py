@@ -153,7 +153,7 @@ def main() -> int:
     instructions = """
 You are a senior Korean producer for HTML + TTS explainer videos.
 Return only valid JSON. No markdown fences. No comments.
-The video must be clear enough to render as HTML scenes and natural enough for TTS narration.
+The video must feel like a finished Korean documentary video, not a PowerPoint deck or renderer demo.
 Do not invent private facts. If the topic is factual or current, stay source-bounded and use cautious wording.
 """.strip()
 
@@ -213,6 +213,9 @@ Return this compact JSON shape. The renderer rejects generic placeholders and ca
 Optional layout visual fields: compare panels, spec/metrics pairs, cards, flow nodes, clock clock/note, code lines, pipeline steps, qa rows, spectrum decision/scale, clean/render frames, final route/stamp. Include them only when they help; every value must be topic-specific. Never use production/system placeholders.
 
 Rules:
+- Make it feel like natural documentary video: b-roll logic, lower-third context, slow camera movement, sparse text, one visual focus point, and scene-to-scene camera rhythm.
+- Screen text must be extremely short: 2-8 words for the main overlay when possible. Put detail in narration, not on the frame.
+- Visual fields should describe subject objects, mechanisms, people, documents, signals, maps, interfaces, or physical metaphors from the topic. Do not write labels about the video-making system.
 - Use only the visual field group for the selected layout when you include visual fields; make each value content-specific.
 - Every scene must include duration, layout, title, mark, caption, claim, evidenceRefs when sources exist, speech, and delivery. These core fields cannot be generic or missing.
 - Do not use renderer/system production language as visual content: no "audio duration", "scene transition", "scene json", "voice wav", "video export", "desktop 16:9", "tablet crop", "mobile stack", "10s", "300s", "5 min", "SOURCE BACKED", or generic "DOCUMENTARY" labels.
@@ -221,6 +224,7 @@ Rules:
 - The first scene must be hero.
 - If sources were provided, the last scene must be sources and the second-to-last scene must be final. If no sources were provided, the last scene must be final.
 - Do not repeat the same visual layout in adjacent scenes. Do not let any normal layout dominate the video.
+- Do not write slide-deck or production-system language. No prompt, renderer, scene JSON, export, or template talk inside the video.
 - Screen text must be short. Put details in speech, not huge captions.
 - Captions must not include timecodes like 0:10 or 00:10.
 - Speech must not be a title repeat. It should explain, transition, and make the next page feel natural, but stay around 70-130 Korean characters for about 10 seconds of TTS.
