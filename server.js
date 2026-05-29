@@ -1985,6 +1985,22 @@ function repairDeliveryVariety(scenes, style) {
   });
 }
 
+function repairNarrationVariety(scenes, topic, topicType, sources, hasSources) {
+  const topicLabel = shortTopicLabel(topic);
+  return scenes.map((scene, index) => {
+    if (scene.layout === "sources") return scene;
+    const next = { ...scene };
+    const source = sourceHintAt(sources, index);
+    if (narrationLooksTemplated(next.speech)) {
+      next.speech = fallbackSpeech(topicLabel, next.title, source, index, hasSources, topicType, next.layout);
+    }
+    if (/확인한 범위 안에서 설명한다|확인 가능한 자료|확인된 출처|source-aware/i.test(next.claim || "")) {
+      next.claim = fallbackClaim(topicLabel, next.title, index, topicType);
+    }
+    return next;
+  });
+}
+
 const topicKeywordStopwords = new Set([
   "영상",
   "설명",
@@ -2125,7 +2141,8 @@ function scoreManifest(manifest, research) {
     if (
       /중요합니다|살펴봅니다|알아봅니다|핵심입니다|이 장면은|자연스럽게 이어|한 가지 질문만 남기고|기준으로 확인합니다|사실은 짧게 고정/.test(
         scene.speech || "",
-      )
+      ) ||
+      narrationLooksTemplated(scene.speech)
     ) {
       genericNarrationScenes += 1;
     }
@@ -2198,6 +2215,15 @@ function scoreManifest(manifest, research) {
     score -= 12;
     issues.push("Narration sounds too templated or boring.");
   }
+  const speechJoined = scenes.map((scene) => scene.speech || "").join(" ");
+  const overusedNarrationPhrases = templatedNarrationPatterns
+    .map((pattern) => ({ label: pattern.source.replaceAll("\\", ""), regex: new RegExp(pattern.source, "g") }))
+    .filter(({ regex }) => (speechJoined.match(regex) || []).length > 3)
+    .map(({ label }) => label);
+  if (overusedNarrationPhrases.length) {
+    score -= 16;
+    issues.push(`Narration repeats fallback phrases: ${overusedNarrationPhrases.slice(0, 3).join(", ")}.`);
+  }
   if (alignment.keywords.length && alignment.contentCount > 4 && alignment.bodyRatio < 0.65) {
     score -= 18;
     issues.push(`Topic alignment is weak in narration: ${Math.round(alignment.bodyRatio * 100)}%.`);
@@ -2266,6 +2292,13 @@ function normalizeManifest(
 
   normalizedScenes = repairLayoutVariety(normalizedScenes, topic, sceneCount, style, options);
   normalizedScenes = repairDeliveryVariety(normalizedScenes, style);
+  normalizedScenes = repairNarrationVariety(
+    normalizedScenes,
+    topic,
+    topicTypeFor(topic, style),
+    sourceList,
+    sourceList.length > 0,
+  );
 
   return {
     title: clipText(payload?.title, `${topic} 설명 영상`, 96),
@@ -2327,44 +2360,79 @@ function sourceSpeechFragment(source) {
   return clipText(candidate, source.host || "출처", 62);
 }
 
-function fallbackSpeech(topicLabel, title, source, index, hasSources, topicType = "evergreen-explainer") {
-  const angleByType = {
-    "current-news": [
-      "확인된 사실",
-      "사용자에게 보이는 변화",
-      "개발자가 확인할 조건",
-      "아직 불확실한 부분",
-      "다음에 확인할 지점",
-    ],
-    comparison: ["판단 기준", "장점", "제한", "실제 선택", "예외 상황"],
-    tutorial: ["목표 상태", "준비 조건", "실행 순서", "실패 지점", "검증 방법"],
-    "documentary-analysis": ["배경 압력", "작동 원리", "결과", "반론", "의미"],
-    "story-case": ["출발점", "긴장", "오판", "전환", "교훈"],
-    "human-stakes": ["사람의 체감", "불안의 원인", "통제권", "회복", "선택"],
-    "evergreen-explainer": ["핵심 원리", "대표 예시", "오해", "한계", "정리"],
-  };
-  const angles = angleByType[topicType] || angleByType["evergreen-explainer"];
-  const angle = angles[index % angles.length];
+const templatedNarrationPatterns = [
+  /확인한 범위 안에서 설명한다/,
+  /다음 장면/,
+  /확인 기준/,
+  /확인된 범위/,
+  /관점에서 좁혀/,
+  /하나의 주장으로 고정/,
+  /확인된 단서와 해석/,
+  /추측은 낮추고/,
+  /기준으로 갈립니다/,
+];
+
+function narrationLooksTemplated(value) {
+  const text = stripHtml(value || "");
+  return templatedNarrationPatterns.some((pattern) => pattern.test(text));
+}
+
+function titleNarrationParts(title, topicLabel) {
+  const clean = stripHtml(title).replace(/\s+/g, " ").trim();
+  const [rawSubject, ...rest] = clean.split(/[:：]/);
+  const subject = clipText(rawSubject || topicLabel, topicLabel, 20);
+  const point = clipText(rest.join(":").trim() || clean.replace(subject, "").trim() || topicLabel, topicLabel, 52);
+  return { subject, point };
+}
+
+function fallbackClaim(topicLabel, title, index, topicType = "evergreen-explainer") {
+  const { subject, point } = titleNarrationParts(title, topicLabel);
+  const claims = [
+    `${subject}${josa(subject, "은", "는")} ${point}${josa(point, "을", "를")} 이해하는 출발점이다.`,
+    `${point}${josa(point, "은", "는")} ${topicLabel}의 흐름을 실제 기록 문제로 바꿔 준다.`,
+    `${subject}${josa(subject, "은", "는")} 신뢰가 만들어지는 위치를 보여 준다.`,
+    `${point}${josa(point, "은", "는")} 장점보다 조건을 먼저 봐야 흔들리지 않는다.`,
+    `${subject}${josa(subject, "에서", "에서")} 보이지 않던 비용과 한계가 드러난다.`,
+    `${topicLabel}${josa(topicLabel, "은", "는")} ${subject}${josa(subject, "을", "를")} 지나며 더 구체적인 판단이 된다.`,
+  ];
+  if (topicType === "current-news") {
+    claims.push(`${subject}${josa(subject, "은", "는")} 확인된 사실과 아직 빈칸인 정보를 나누는 장면이다.`);
+  }
+  return clipText(claims[index % claims.length], title, 150);
+}
+
+function fallbackSpeech(topicLabel, title, source, index, hasSources, _topicType = "evergreen-explainer", layout = "") {
+  const { subject, point } = titleNarrationParts(title, topicLabel);
+  const sourceName = source?.host || "";
   const fragment = sourceSpeechFragment(source);
-  const sourceName = source?.host || "확인된 출처";
-  const sourceLead = source ? `${sourceName}에서 확인되는 단서` : "사용자가 준 주제";
+  const sourceCue =
+    source && index % 7 === 0
+      ? `하단 출처의 ${sourceName}${josa(sourceName, "은", "는")} 이 설명이 벗어나지 않게 잡아 주는 배경입니다.`
+      : source && index % 11 === 0 && fragment
+        ? `문서 표현은 "${fragment}" 쪽에 가깝지만, 여기서는 초보자가 따라갈 수 있는 흐름으로 풀어 봅니다.`
+        : "";
   const transitions = [
-    `먼저 ${topicLabel}${josa(topicLabel, "을", "를")} ${angle} 관점에서 좁혀 봅니다.`,
-    `여기서 중요한 건 ${title}${josa(title, "을", "를")} 하나의 주장으로 고정하는 일입니다.`,
-    `이 단계는 ${sourceLead}${josa(sourceLead, "을", "를")} 바탕으로, 확인된 단서와 해석을 분리합니다.`,
-    `다음 판단은 ${angle}${josa(angle, "을", "를")} 기준으로 갈립니다.`,
+    `${subject}${josa(subject, "은", "는")} 이름보다 역할이 먼저입니다. ${point}${josa(point, "을", "를")} 실제 기록이 움직이는 장면으로 바꿔 보면 훨씬 덜 추상적으로 보입니다.`,
+    `${point}${josa(point, "은", "는")} 갑자기 생기는 결론이 아닙니다. 누가 보고, 누가 받아들이고, 어떤 흔적이 남는지 순서대로 이어질 때 의미가 생깁니다.`,
+    `${subject}${josa(subject, "을", "를")} 볼 때는 멋진 단어보다 실패 지점을 먼저 떠올리는 편이 낫습니다. 그래야 장점과 한계가 같은 화면 안에서 보입니다.`,
+    `겉으로는 ${subject}${josa(subject, "이", "가")} 단순한 기능처럼 보입니다. 하지만 실제로는 기록을 바꾸기 어렵게 만드는 약속들이 여러 겹으로 쌓입니다.`,
+    `${point}${josa(point, "은", "는")} 사용자가 직접 느끼기 어려운 부분입니다. 대신 결과가 늦어지거나 비용이 생기거나 되돌리기 어려운 순간에 드러납니다.`,
+    `여기서는 ${subject}${josa(subject, "을", "를")} 믿는다고 말하지 않습니다. 어떤 조건에서 믿을 만해지고, 어디서 다시 사람의 판단이 필요한지를 나눠 봅니다.`,
+    `${topicLabel}${josa(topicLabel, "은", "는")} 한 번에 이해되는 구조가 아닙니다. ${subject}${josa(subject, "을", "를")} 지나며 기록, 검증, 합의가 서로 다른 역할을 맡는다는 점이 보입니다.`,
+    `${point}${josa(point, "을", "를")} 놓치면 블록체인은 그냥 어려운 장부처럼 들립니다. 이 장면에서는 그 장부가 왜 쉽게 고쳐지지 않는지에 집중합니다.`,
   ];
   if (/결론|정리/.test(title)) {
-    return `정리하면 ${topicLabel}${josa(topicLabel, "은", "는")} 한 문장으로 단정할 주제가 아닙니다. 확인된 근거, 적용 범위, 남은 불확실성을 나눠 봐야 판단이 흔들리지 않습니다.`;
+    return `정리하면 ${topicLabel}${josa(topicLabel, "은", "는")} 기술 이름이 아니라 기록을 신뢰하게 만드는 절차입니다. 강점은 투명성에 있고, 한계는 속도와 책임의 경계에서 다시 드러납니다.`;
   }
-  if (source) {
-    const evidenceSentence = fragment
-      ? `${sourceName}의 "${fragment}"를 확인 기준으로 둡니다.`
-      : `${sourceName}의 확인 가능한 내용만 중심에 둡니다.`;
-    return `${transitions[index % transitions.length]} ${evidenceSentence} 추측은 낮추고, 확인된 범위만 다음 장면으로 넘깁니다.`;
-  }
-  const sourceLine = hasSources ? "확인된 출처와 맞지 않는 추측은 빼고," : "최신 사실처럼 보이는 단정은 피하고,";
-  return `${transitions[index % transitions.length]} ${sourceLine} 시청자가 다음 장면에서 확인할 질문을 하나만 남깁니다.`;
+  const layoutClose =
+    layout === "qa"
+      ? " 그래서 질문은 더 많아지지만, 판단은 오히려 선명해집니다."
+      : layout === "clock"
+        ? " 시간 순서를 놓치지 않으면 왜 되돌리기 어려운지도 같이 보입니다."
+        : "";
+  const base = transitions[index % transitions.length];
+  const caution = hasSources && !sourceCue && index % 6 === 3 ? " 사실처럼 들리는 비유는 여기서 한 번 멈춰 세웁니다." : "";
+  return clipText(`${base}${layoutClose} ${sourceCue || caution}`.replace(/\s+/g, " ").trim(), base, 190);
 }
 
 const fallbackLayoutFlow = [
@@ -2535,7 +2603,7 @@ function fallbackManifest(topic, sceneCount = 30, style = "explainer", research 
         ? sourceIds.slice(0, Math.min(2, sourceIds.length))
         : [sourceIds[index % sourceIds.length]]
       : [];
-    const speech = fallbackSpeech(topicLabel, title, source, index, hasSources, topicType);
+    const speech = fallbackSpeech(topicLabel, title, source, index, hasSources, topicType, layout);
     const role = deliveryRoleFor(layout, index);
     const delivery = normalizeDelivery(
       { role, ...(deliveryProfiles[role] || deliveryProfiles.context) },
@@ -2545,9 +2613,7 @@ function fallbackManifest(topic, sceneCount = 30, style = "explainer", research 
       style,
     );
     const claim = clipText(
-      source
-        ? `${title}는 ${source.host || "확인 가능한 자료"}에서 확인한 범위 안에서 설명한다.`
-        : `${title}는 ${topicLabel}${josa(topicLabel, "을", "를")} 이해하기 위한 핵심 단계다.`,
+      fallbackClaim(topicLabel, title, index, topicType),
       title,
       150,
     );
