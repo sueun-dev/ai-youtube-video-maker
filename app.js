@@ -145,12 +145,17 @@ function evidenceLabel(scene) {
     .join(" / ");
 }
 
+function cinemaCaption(scene, max = 54) {
+  return cleanCinemaText(scene.caption || scene.claim || scene.title, max);
+}
+
 function renderCinematicVisual(scene, terms) {
   if (scene.layout === "sources") {
     const sources = normalizeSourceItems(scene.sources);
     return `
       <div class="cinema-documents">
         ${sources
+          .slice(0, 4)
           .map(
             (source) => `
               <article>
@@ -171,7 +176,7 @@ function renderCinematicVisual(scene, terms) {
     return `
       <div class="cinema-trace">
         ${items
-          .slice(0, 5)
+          .slice(0, 3)
           .map(
             (item, index) => `
               <span class="${index === (scene.activeNode ?? 2) || scene.layout === "final" ? "active" : ""}">
@@ -187,8 +192,8 @@ function renderCinematicVisual(scene, terms) {
   if (scene.layout === "clock") {
     return `
       <div class="cinema-timecut">
-        <b>${escapeHtml(scene.clock || terms[0] || scene.mark)}</b>
-        <span>${escapeHtml(scene.note || scene.claim || scene.caption)}</span>
+        <b>${escapeHtml(cleanCinemaText(scene.clock || terms[0] || scene.mark, 12))}</b>
+        <span>${escapeHtml(cleanCinemaText(scene.note || scene.claim || scene.caption, 48))}</span>
         <i></i>
       </div>
     `;
@@ -199,11 +204,11 @@ function renderCinematicVisual(scene, terms) {
     return `
       <div class="cinema-split">
         ${panels
+          .slice(0, 2)
           .map(
             (panel) => `
               <section>
-                <b>${escapeHtml(panel.title)}</b>
-                <span>${escapeHtml((panel.lines || []).join(" · "))}</span>
+                <b>${escapeHtml(cleanCinemaText(panel.title, 24))}</b>
               </section>
             `,
           )
@@ -214,20 +219,16 @@ function renderCinematicVisual(scene, terms) {
 
   if (scene.layout === "code") {
     return `<div class="cinema-terminal">${(scene.code || terms)
-      .slice(0, 4)
-      .map((line) => `<span>${escapeHtml(cleanCinemaText(line, 58))}</span>`)
+      .slice(0, 2)
+      .map((line) => `<span>${escapeHtml(cleanCinemaText(line, 46))}</span>`)
       .join("")}</div>`;
   }
 
+  const lead = terms[0] || scene.mark || scene.title;
   return `
     <div class="cinema-field">
-      ${terms
-        .slice(0, 5)
-        .map(
-          (term, index) =>
-            `<span class="${index === 0 ? "lead" : ""}" style="--x:${9 + index * 7}%; --y:${14 + index * 13}%; --delay:${index * 180}ms; --lift:${(index * -0.18).toFixed(2)}rem">${escapeHtml(term)}</span>`,
-        )
-        .join("")}
+      <b>${escapeHtml(cleanCinemaText(lead, 18))}</b>
+      <i></i>
     </div>
   `;
 }
@@ -237,21 +238,22 @@ function renderCinematicSceneBody(scene) {
   const focus = scene.mark || terms[0] || scene.title;
   const source = evidenceLabel(scene);
   const claim = scene.claim || scene.subtitle || scene.caption || scene.speech;
+  const kicker = scene.layout === "hero" ? scene.kicker || currentManifest.title || "OPENING" : scene.layout || "scene";
   return `
     <div class="cinema-scene cinema-${escapeHtml(scene.layout || "scene")}">
       <div class="cinema-backdrop" aria-hidden="true">
         <span></span><span></span><span></span><span></span>
       </div>
       <div class="cinema-copy">
-        <span class="cinema-kicker">${escapeHtml(scene.kicker || currentManifest.title || scene.layout || "VIDEO")}</span>
+        <span class="cinema-kicker">${escapeHtml(cleanCinemaText(kicker, 30))}</span>
         ${scene.layout === "hero" ? `<h1>${renderTitle(scene)}</h1>` : `<h2>${renderTitle(scene)}</h2>`}
-        <p>${escapeHtml(cleanCinemaText(claim, 118))}</p>
+        <p>${escapeHtml(cleanCinemaText(claim, scene.layout === "hero" ? 58 : 72))}</p>
       </div>
-      <div class="cinema-focus" aria-hidden="true">${escapeHtml(cleanCinemaText(focus, 18))}</div>
+      <div class="cinema-focus" aria-hidden="true">${escapeHtml(cleanCinemaText(focus, 12))}</div>
       <div class="cinema-visual">${renderCinematicVisual(scene, terms)}</div>
       <div class="cinema-lower">
         <span>${escapeHtml(source || scene.layout || "scene")}</span>
-        <b>${escapeHtml(scene.caption || scene.title)}</b>
+        <b>${escapeHtml(cinemaCaption(scene))}</b>
       </div>
     </div>
   `;
@@ -1727,9 +1729,9 @@ function drawCinematicSceneCanvas(ctx, scene, index, sceneProgress, totalProgres
   const height = 1080;
   const theme = currentCanvasTheme();
   const { accent, cool, gold, ink, muted, softText } = theme;
-  const terms = cinemaTerms(scene, 6);
-  const focus = cleanCinemaText(scene.mark || terms[0] || scene.title, 18);
-  const claim = cleanCinemaText(scene.claim || scene.subtitle || scene.caption || scene.speech, 150);
+  const terms = cinemaTerms(scene, 4);
+  const focus = cleanCinemaText(scene.mark || terms[0] || scene.title, 12);
+  const claim = cleanCinemaText(scene.claim || scene.subtitle || scene.caption || scene.speech, 72);
 
   const bg = ctx.createLinearGradient(0, 0, width, height);
   bg.addColorStop(0, theme.bg[0]);
@@ -1772,11 +1774,11 @@ function drawCinematicSceneCanvas(ctx, scene, index, sceneProgress, totalProgres
 
   ctx.textAlign = "right";
   ctx.textBaseline = "middle";
-  ctx.font = canvasFont(scene.layout === "hero" ? 220 : 176, 950);
-  ctx.fillStyle = colorWithAlpha(ink, 0.14);
+  ctx.font = canvasFont(scene.layout === "hero" ? 112 : 92, 950);
+  ctx.fillStyle = colorWithAlpha(ink, 0.075);
   wrapCanvasText(ctx, focus, 660)
     .slice(0, 2)
-    .forEach((line, lineIndex) => ctx.fillText(line, width - 94, 410 + lineIndex * 174));
+    .forEach((line, lineIndex) => ctx.fillText(line, width - 104, 440 + lineIndex * 118));
 
   ctx.textAlign = "left";
   ctx.textBaseline = "top";
@@ -1788,18 +1790,18 @@ function drawCinematicSceneCanvas(ctx, scene, index, sceneProgress, totalProgres
   ctx.fillText(`${String(index + 1).padStart(2, "0")} / ${String(scenes.length).padStart(2, "0")}`, width - 96, 72);
 
   ctx.textAlign = "left";
-  const titleSize = scene.layout === "hero" ? 82 : 64;
-  const titleHeight = drawTextBlock(ctx, scene.title, 96, 210, 900, titleSize, {
+  const titleSize = scene.layout === "hero" ? 58 : 44;
+  const titleHeight = drawTextBlock(ctx, scene.title, 110, 250, 760, titleSize, {
     align: "left",
     color: ink,
     weight: 950,
-    lineHeight: titleSize * 1.1,
+    lineHeight: titleSize * 1.14,
   });
-  drawTextBlock(ctx, claim, 100, Math.min(570, 235 + titleHeight), 760, 31, {
+  drawTextBlock(ctx, claim, 112, Math.min(560, 286 + titleHeight), 620, 24, {
     align: "left",
     color: muted,
-    weight: 760,
-    lineHeight: 44,
+    weight: 690,
+    lineHeight: 35,
   });
 
   if (scene.layout === "sources") {
@@ -1828,26 +1830,26 @@ function drawCinematicSceneCanvas(ctx, scene, index, sceneProgress, totalProgres
   } else if (["flow", "pipeline", "final"].includes(scene.layout)) {
     const items =
       (scene.layout === "flow" ? scene.nodes : scene.layout === "pipeline" ? scene.steps : scene.route) || terms;
-    items.slice(0, 5).forEach((item, itemIndex) => {
-      const x = 1050 + itemIndex * 138;
+    items.slice(0, 4).forEach((item, itemIndex) => {
+      const x = 1080 + itemIndex * 154;
       const y = 620 - Math.sin((sceneProgress + itemIndex / 8) * Math.PI * 2) * 18;
       ctx.fillStyle =
         itemIndex === (scene.activeNode ?? 2) || scene.layout === "final"
           ? colorWithAlpha(accent, 0.22)
           : colorWithAlpha(ink, 0.065);
       ctx.beginPath();
-      ctx.arc(x, y, itemIndex === (scene.activeNode ?? 2) ? 42 : 32, 0, Math.PI * 2);
+      ctx.arc(x, y, itemIndex === (scene.activeNode ?? 2) ? 32 : 24, 0, Math.PI * 2);
       ctx.fill();
       ctx.strokeStyle = colorWithAlpha(cool, 0.36);
       ctx.lineWidth = 2;
       ctx.stroke();
-      if (itemIndex < 4) {
+      if (itemIndex < 3) {
         ctx.beginPath();
-        ctx.moveTo(x + 42, y);
-        ctx.lineTo(x + 96, 620 - Math.sin((sceneProgress + (itemIndex + 1) / 8) * Math.PI * 2) * 18);
+        ctx.moveTo(x + 34, y);
+        ctx.lineTo(x + 112, 620 - Math.sin((sceneProgress + (itemIndex + 1) / 8) * Math.PI * 2) * 18);
         ctx.stroke();
       }
-      drawTextBlock(ctx, item, x, y + 56, 140, 21, { color: softText, weight: 780 });
+      drawTextBlock(ctx, cleanCinemaText(item, 24), x, y + 45, 136, 18, { color: softText, weight: 720 });
     });
   } else if (scene.layout === "clock") {
     ctx.strokeStyle = colorWithAlpha(cool, 0.48);
@@ -1862,35 +1864,35 @@ function drawCinematicSceneCanvas(ctx, scene, index, sceneProgress, totalProgres
     drawTextBlock(ctx, scene.clock || focus, 1390, 505, 310, 46, { color: gold, weight: 950 });
     drawTextBlock(ctx, scene.note || claim, 1390, 640, 360, 26, { color: muted, weight: 730 });
   } else {
-    terms.slice(0, 5).forEach((term, itemIndex) => {
-      const x = 1120 + itemIndex * 54;
-      const y = 420 + itemIndex * 68 - Math.sin((sceneProgress + itemIndex / 7) * Math.PI * 2) * 14;
+    terms.slice(0, 1).forEach((term, itemIndex) => {
+      const x = 1120;
+      const y = 490 + itemIndex * 72 - Math.sin((sceneProgress + itemIndex / 7) * Math.PI * 2) * 10;
       ctx.strokeStyle = colorWithAlpha(itemIndex === 0 ? accent : cool, itemIndex === 0 ? 0.74 : 0.42);
-      ctx.lineWidth = itemIndex === 0 ? 3 : 1.5;
+      ctx.lineWidth = itemIndex === 0 ? 2.4 : 1.2;
       ctx.beginPath();
       ctx.moveTo(x - 58, y + 18);
-      ctx.lineTo(x + 430, y - 10);
+      ctx.lineTo(x + 360, y - 6);
       ctx.stroke();
       ctx.fillStyle = itemIndex === 0 ? colorWithAlpha(accent, 0.86) : colorWithAlpha(cool, 0.58);
       ctx.beginPath();
       ctx.arc(x - 58, y + 18, itemIndex === 0 ? 9 : 6, 0, Math.PI * 2);
       ctx.fill();
       ctx.fillStyle = itemIndex === 0 ? gold : softText;
-      ctx.font = canvasFont(itemIndex === 0 ? 28 : 24, 880);
+      ctx.font = canvasFont(itemIndex === 0 ? 24 : 20, 800);
       ctx.textAlign = "left";
-      ctx.fillText(term, x - 32, y - 2);
+      ctx.fillText(cleanCinemaText(term, 18), x - 32, y - 2);
     });
   }
 
   ctx.fillStyle = colorWithAlpha(ink, 0.13);
   ctx.fillRect(96, height - 136, width - 192, 1);
   ctx.fillStyle = muted;
-  ctx.font = canvasFont(22, 850);
+  ctx.font = canvasFont(18, 760);
   ctx.textAlign = "left";
   ctx.fillText(evidenceLabel(scene) || scene.layout || "scene", 96, height - 102);
   ctx.textAlign = "right";
   ctx.fillStyle = ink;
-  ctx.fillText(cleanCinemaText(scene.caption || scene.title, 72), width - 96, height - 102);
+  ctx.fillText(cleanCinemaText(scene.caption || scene.title, 54), width - 96, height - 102);
 
   const progress = Math.max(0, Math.min(1, totalProgress));
   ctx.fillStyle = colorWithAlpha(ink, 0.14);

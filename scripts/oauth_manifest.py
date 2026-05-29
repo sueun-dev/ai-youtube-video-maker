@@ -214,6 +214,8 @@ Optional layout visual fields: compare panels, spec/metrics pairs, cards, flow n
 
 Rules:
 - Make it feel like natural documentary video: b-roll logic, lower-third context, slow camera movement, sparse text, one visual focus point, and scene-to-scene camera rhythm.
+- Frontend aesthetic baseline: avoid generic AI-looking clutter; commit to one cohesive visual mood, contextual background depth, restrained typography, and one deliberate motion idea per scene.
+- Frame density gate: each scene may show only title, one short claim, one visual anchor, and one tiny lower-third. No scattered keyword clouds, card grids, or busy dashboard compositions.
 - Screen text must be extremely short: 2-8 words for the main overlay when possible. Put detail in narration, not on the frame.
 - Visual fields should describe subject objects, mechanisms, people, documents, signals, maps, interfaces, or physical metaphors from the topic. Do not write labels about the video-making system.
 - Use only the visual field group for the selected layout when you include visual fields; make each value content-specific.
